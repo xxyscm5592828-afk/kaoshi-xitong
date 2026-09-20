@@ -323,6 +323,9 @@ def run():
         # 练习流：回炉点 p12 出池，根因点 p6 加权优先出题
         # 注意：#start-session 是「今日计划」首块按钮，会切换科目；用 #start-manual 锁定当前科目（math）
         page.click('.nav-btn[data-view="practice"]')
+        # 自选区默认折叠且懒渲染，#start-manual 展开后才存在；已展开则不再点，避免反而折叠
+        if page.locator("#start-manual").count() == 0:
+            page.click("#scope-toggle")
         page.wait_for_selector("#start-manual")
         page.click("#start-manual")
         page.wait_for_selector(".stem")

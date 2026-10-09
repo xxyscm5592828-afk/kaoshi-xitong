@@ -6,7 +6,15 @@ const Placement = {
   ROOT_KPS: ['m7-pr1', 'm7-pr2', 'm7-pr3', 'm7-pr4'],
 
   needed(subjectId) {
-    return !Store.placement.done[subjectId];
+    const p = Store.placement;
+    return !p.done[subjectId] && !(p.dismissed || {})[subjectId];
+  },
+
+  // 跳过引导：记一笔「这科不摸底了」并持久化（刷新不再反复弹）；区别于 done（真正做过摸底）
+  dismiss(subjectId) {
+    const p = Store.placement;
+    p.dismissed = { ...(p.dismissed || {}), [subjectId]: true };
+    Store.placement = p;
   },
 
   hasQuestion(kpId) {

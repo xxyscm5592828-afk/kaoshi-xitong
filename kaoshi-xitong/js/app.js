@@ -494,6 +494,7 @@ const App = {
       this.renderPlacementQuestion(el);
     });
     el.querySelector('#placement-skip').addEventListener('click', () => {
+      Placement.dismiss(sid); // 持久化：跳过也算「见过一次」，之后不再弹
       this._placementDismissed = true;
       this.renderPractice(el);
     });
@@ -665,7 +666,6 @@ const App = {
     // 放松小游戏（阶段 3 §10.5：奖励性收尾，数据回流掌握度/复习队列）；周末彩蛋家长挑战
     const isWeekend = [0, 6].includes(new Date(now).getDay());
     const dueWords = Games.flashDue(now).length;
-    const arithDone = (Store.dayStat(Store.todayKey(now)).arithRounds || 0) > 0;
     el.innerHTML = `
       ${this.statusStripHTML(now, habit, blocks)}
       <div class="card hero plan-card">
@@ -678,12 +678,6 @@ const App = {
               <span class="plan-reasons">${b.reasons.join(' · ')}</span>
               <span class="plan-count">${b.count} 题 · 约 15 分钟（含讲解）${this.planDone.includes(b.subjectId) ? ' · ✅ 已完成' : ''}</span>
             </button>`).join('')}
-          <button class="plan-block mode-break" id="daily-arith">
-            <span class="plan-tag">⚡ 每日速算</span>
-            <span class="plan-subject">计算基本功 · 5 分钟</span>
-            <span class="plan-reasons">负数 / 乘方 / 去括号 / 分式</span>
-            <span class="plan-count">${arithDone ? '✅ 今日已完成' : '每天练一把，计算不丢分'}</span>
-          </button>
         </div>
         <div class="session-actions">
           ${blocks.length ? '<button class="btn big glow" id="start-now">▶ 点我开工</button>' : ''}
@@ -694,16 +688,6 @@ const App = {
       ${this.todayTodoHTML(now, sid)}
       ${this.reheatCardHTML(sid)}
       ${this.scopePickerHTML(sid)}
-      <div class="card">
-        <h2>🎮 放松小游戏</h2>
-        <p class="muted">游戏是奖励性收尾——练完再玩。闪电心算回流计算掌握度；单词快闪答错的词会自动进复习队列。</p>
-        <div class="session-actions">
-          <button class="btn secondary" id="game-arith">⚡ 闪电心算 60s</button>
-          <button class="btn secondary" id="game-flash">📚 单词快闪</button>
-          ${dueWords > 0 ? `<button class="btn secondary" id="game-flash-review">🔁 单词复习（${dueWords} 个到期）</button>` : ''}
-          ${isWeekend ? `<button class="btn secondary" id="parent-challenge">👨‍👦 家长挑战（周末彩蛋）</button>` : ''}
-        </div>
-      </div>
       <div class="session-actions">
         <button class="btn secondary" id="home-brief">📊 学习汇报（给家长看）</button>
         <button class="btn secondary" id="home-grade">📈 成绩汇报</button>
@@ -715,6 +699,16 @@ const App = {
           <button class="btn glow" id="export-data">📤 导出备份</button>
           <button class="btn secondary" id="import-data">📥 导入备份</button>
           <input type="file" id="import-file" accept="application/json,.json" style="display:none">
+        </div>
+      </div>
+      <div class="card">
+        <h2>🎮 放松小游戏</h2>
+        <p class="muted">游戏是奖励性收尾——练完再玩。闪电心算回流计算掌握度；单词快闪答错的词会自动进复习队列。</p>
+        <div class="session-actions">
+          <button class="btn secondary" id="game-arith">⚡ 闪电心算 60s</button>
+          <button class="btn secondary" id="game-flash">📚 单词快闪</button>
+          ${dueWords > 0 ? `<button class="btn secondary" id="game-flash-review">🔁 单词复习（${dueWords} 个到期）</button>` : ''}
+          ${isWeekend ? `<button class="btn secondary" id="parent-challenge">👨‍👦 家长挑战（周末彩蛋）</button>` : ''}
         </div>
       </div>`;
     this.bindSubjectBar(el, () => this.renderPractice(el));
@@ -770,8 +764,6 @@ const App = {
     });
     const ga = el.querySelector('#game-arith');
     if (ga) ga.addEventListener('click', () => this.renderArithGame(el));
-    const da = el.querySelector('#daily-arith');
-    if (da) da.addEventListener('click', () => this.renderArithGame(el, { seconds: 300, daily: true }));
     const gf = el.querySelector('#game-flash');
     if (gf) gf.addEventListener('click', () => this.renderFlashGame(el));
     const gfr = el.querySelector('#game-flash-review');

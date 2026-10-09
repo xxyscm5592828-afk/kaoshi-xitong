@@ -369,7 +369,7 @@ const Report = {
     const subjRows = subj.map(s => `<tr><td>${s.name}</td><td>${s.score}</td><td>${s.lit}/${s.total}</td></tr>`).join('');
     return `
       <div class="pr-doc">
-        <h1>开挂补习系统（初二） · 本周战报</h1>
+        <h1>开挂补习系统（初二、初三） · 本周战报</h1>
         <p class="pr-range">统计区间：${w.days[0].key} 至 ${w.days[6].key}</p>
         <h2>本周成果</h2>
         <ul>
@@ -417,7 +417,7 @@ const Report = {
     }).join('');
     return `
       <div class="pr-doc">
-        <h1>开挂补习系统（初二） · 本周未解决错题</h1>
+        <h1>开挂补习系统（初二、初三） · 本周未解决错题</h1>
         <p class="pr-range">统计区间：${Store.todayKey(cutoff)} 至 ${Store.todayKey(now)}　共 ${items.length} 道</p>
         ${items.length ? rows : '<p>本周没有未解决的错题——答错的都走完闭环销号了，漂亮。</p>'}
         <p class="pr-note">这些是本周答错、还没走完「原题重做(D3) → 变式(D7)」闭环的题。让孩子每道讲一遍思路（哪里错、正确怎么想），讲得清楚就是真会了。</p>

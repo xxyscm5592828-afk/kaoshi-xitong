@@ -3,7 +3,7 @@
 // 云端坏了也能用设置页"导入备份"手动恢复。冲突按 exportedAt 时间戳比较，新的赢（单用户场景）。
 const Sync = {
   FILE: 'tutor-backup.json',
-  DESC: '开挂补习系统（初二）备份 (tutor-backup)',
+  DESC: '开挂补习系统（初二、初三）备份 (tutor-backup)',
   DEBOUNCE_MS: 30000,
   _busy: false,    // 同步写 settings 期间置 true，阻断 Store._write → autoPush 回环
   _timer: null,

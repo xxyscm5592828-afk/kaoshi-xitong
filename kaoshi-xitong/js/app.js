@@ -48,6 +48,7 @@ const App = {
   _placementDismissed: false, // 摸底引导「跳过」只收起本次渲染（内存态，刷新再现）
   dailyPlan: null,
   learnKpId: null,  // 学习页当前知识点（从知识树点进来）
+  _viewStack: [],       // 视图历史栈（悬浮返回键回退用）
   _prevActiveAt: 0,     // 上次活跃时间戳（召回触发用）
   proactiveShown: false, // 本次会话是否已发主动消息（触发点在结算页）
 
@@ -69,6 +70,8 @@ const App = {
     });
     const dadFab = document.getElementById('dad-fab'); // 全局右侧悬浮入口：点一下弹「问爸爸」弹窗（不跳页）
     if (dadFab) dadFab.addEventListener('click', () => this.openDadModal());
+    const backFab = document.getElementById('back-fab'); // 全局左侧悬浮返回键：回上一个浏览过的页面
+    if (backFab) backFab.addEventListener('click', () => this.back());
     if (typeof Sync !== 'undefined') Sync.init(); // 已配置云同步时：启动拉取比对 + 关页兜底
     this.show('practice');
     this.showWelcome();
@@ -142,8 +145,10 @@ const App = {
     Store.session = null;
   },
 
-  show(view) {
+  show(view, opts) {
     this._clearGameTimer(); // 切视图即放弃进行中的小游戏，别把没玩的局结算成掌握度
+    // 视图历史栈：手动切页记一步；返回键回退（opts.back）不再记，避免来回叠栈
+    if (this.view !== view && !(opts && opts.back)) this._viewStack.push(this.view);
     this.view = view;
     this.el = document.getElementById('view');
     document.querySelectorAll('.nav-btn').forEach(btn => {
@@ -152,6 +157,8 @@ const App = {
     if (view === 'tools') this._toolDetail = null; // 从导航进工具页一律回目录
     const dadFab = document.getElementById('dad-fab');
     if (dadFab) dadFab.classList.toggle('hidden', view === 'assistant'); // 已在该页则收起悬浮框
+    const backFab = document.getElementById('back-fab');
+    if (backFab) backFab.classList.toggle('hidden', this._viewStack.length === 0); // 没有上一页就收起返回键
     window.scrollTo(0, 0);
     if (view === 'practice') this.renderPractice(this.el);
     else if (view === 'report') { Report.render(this.el); this.renderMonthlyReview(this.el.querySelector('#monthly-review-btn')); }
@@ -163,6 +170,13 @@ const App = {
     else if (view === 'tools') this.renderTools(this.el);
     else if (view === 'settings') this.renderSettings(this.el);
     else if (view === 'guide') this.renderGuide(this.el);
+  },
+
+  // 悬浮返回键：回到上一个浏览过的视图（无上一页时按钮已收起）
+  back() {
+    const prev = this._viewStack.pop();
+    if (!prev) return;
+    this.show(prev, { back: true });
   },
 
   pick(list) { return list[Math.floor(Math.random() * list.length)]; },
@@ -330,7 +344,7 @@ const App = {
 
   renderLearn(el) {
     const kp = Store.kpIndex()[this.learnKpId];
-    if (!kp || kp.level !== 4) return this.show('report');
+    if (!kp || kp.level !== 4) return this.show('report', { back: true }); // 知识点非法：纠偏，不占视图栈
     const now = Date.now();
     const m = Store.mastery[kp.id] || null;
     const eff = Report.effective(m, now);
@@ -1412,6 +1426,7 @@ const App = {
 
     // 答对：评级 + 掌握度变化 + 解析；点亮/冷知识卡用彩色弹窗庆祝
     if (res.correct === true) {
+      Celebrate.sidePraise(); // 每答对一题：妈妈在屏幕侧边探出表扬（非阻塞，不挡「下一题」）
       const delta = res.after - res.before;
       const ratingHTML = res.rating === 'S'
         ? `<span class="rating rating-S">⚡S 级</span>`
@@ -2360,7 +2375,7 @@ const App = {
     el.innerHTML = `
       <div class="card hero">
         <h2>❓ 使用说明</h2>
-        <p class="muted">这是给初二同学和家长用的全科补习系统：做错的题帮你看懂，真正学会的题才算过——所有进度都存在这台设备里。</p>
+        <p class="muted">这是给初二、初三同学和家长用的全科补习系统：做错的题帮你看懂，真正学会的题才算过——所有进度都存在这台设备里。</p>
       </div>
       <div class="card">
         <h2>✨ 好在哪</h2>

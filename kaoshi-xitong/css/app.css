@@ -931,6 +931,31 @@ th { color: var(--muted); font-weight: 600; font-size: 13px; }
 @keyframes dad-fab-in { from { opacity: 0; transform: translateY(20px) scale(0.7); } to { opacity: 1; transform: none; } }
 @media (max-width: 600px) { .dad-fab { width: 54px; right: 6px; bottom: 84px; } }
 
+/* ===== 全局左下悬浮返回键（回上一个浏览过的页面；无可返回时收起） ===== */
+.back-fab {
+  position: fixed;
+  left: 18px;
+  bottom: 90px;
+  z-index: 990;
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  font-size: 26px;
+  line-height: 1;
+  color: #fff;
+  background: linear-gradient(135deg, #7c5cff, #5b8cff);
+  box-shadow: 0 10px 24px rgba(91, 140, 255, 0.45);
+  cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  animation: dad-fab-in 0.4s cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+.back-fab:hover { transform: translateY(-3px) scale(1.05); box-shadow: 0 14px 30px rgba(91, 140, 255, 0.55); }
+.back-fab:active { transform: scale(0.94); }
+.back-fab.hidden { display: none; }
+@media (max-width: 600px) { .back-fab { width: 48px; height: 48px; left: 6px; bottom: 84px; font-size: 22px; } }
+
 /* ============ 周战报卡（近 7 天趋势） ============ */
 .card.battle .week-body { display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-start; }
 .week-rows { flex: 1 1 220px; min-width: 0; }
@@ -1103,3 +1128,23 @@ th { color: var(--muted); font-weight: 600; font-size: 13px; }
 }
 @keyframes confettiFall { from { transform: translateY(0) rotate(0deg); opacity: 1; } to { transform: translateY(115vh) rotate(720deg); opacity: 0.9; } }
 @keyframes celebratePop { from { opacity: 0; transform: translateY(24px) scale(0.8); } to { opacity: 1; transform: none; } }
+
+/* ===== 妈妈旁边表扬：每答对一题从屏幕侧边探出，非阻塞、自动淡出（不影响下一题） ===== */
+.side-praise {
+  position: fixed; left: 12px; top: 34%; z-index: 995;
+  width: 132px; padding: 10px 10px 12px; border-radius: 16px; text-align: center;
+  color: #78350f; background: linear-gradient(160deg, #fff7ed, #fef3c7);
+  border: 2px solid #f59e0b; box-shadow: 0 14px 32px rgba(245, 158, 11, 0.35);
+  pointer-events: none; /* 关键：不拦截「下一题」等点击 */
+  animation: sidePraiseIn 0.42s cubic-bezier(0.2, 1.4, 0.45, 1);
+}
+.side-praise-avatar { display: block; width: 72px; height: 72px; margin: 0 auto 6px; object-fit: contain; }
+.side-praise-text { font-size: 13px; font-weight: 700; line-height: 1.45; }
+.side-praise.out { animation: sidePraiseOut 0.32s ease forwards; }
+@keyframes sidePraiseIn { from { opacity: 0; transform: translateX(-120%) scale(0.9); } to { opacity: 1; transform: none; } }
+@keyframes sidePraiseOut { to { opacity: 0; transform: translateX(-120%) scale(0.9); } }
+@media (max-width: 600px) {
+  .side-praise { width: 104px; left: 6px; top: 28%; padding: 8px; }
+  .side-praise-avatar { width: 54px; height: 54px; }
+  .side-praise-text { font-size: 12px; }
+}

@@ -7,6 +7,15 @@ const Celebrate = {
   _last: 0,
   _ctx: null,
 
+  SIDE_TTL: 1800, // 侧边「妈妈旁边表扬」无操作自动淡出
+  SIDE_LINES: [
+    '这题稳！妈妈在旁边看着呢 😄',
+    '又对了，妈妈的小骄傲 💛',
+    '漂亮！思路很顺 👏',
+    '对了对了，妈妈给你比个心 💗',
+    '真棒，越做越稳 ✨',
+  ],
+
   // 表扬一次：礼炮纸屑 + 中央点赞卡 +（默认）庆典音效
   praise(opts) {
     if (typeof document === 'undefined' || !document.body) return; // 测试 / 无 DOM 环境跳过
@@ -30,6 +39,29 @@ const Celebrate = {
     };
     card.addEventListener('click', dismiss);
     const timer = setTimeout(dismiss, this.TTL);
+    if (timer && typeof timer.unref === 'function') timer.unref();
+  },
+
+  // 侧边「妈妈旁边表扬」：每答对一题从屏幕侧边探出头来表扬一句；
+  // 非阻塞（pointer-events:none）、自动淡出、连对时替换旧的（不堆积），不影响点「下一题」
+  sidePraise(opts) {
+    if (typeof document === 'undefined' || !document.body) return; // 测试 / 无 DOM 环境跳过
+    const o = opts || {};
+    const lines = this.SIDE_LINES;
+    const text = o.text || lines[Math.floor(Math.random() * lines.length)];
+    const old = document.getElementById('side-praise');
+    if (old && old.remove) old.remove(); // 连对：替换上一个，避免浮层堆积
+    const box = document.createElement('div');
+    box.id = 'side-praise';
+    box.className = 'side-praise';
+    box.innerHTML = `<img class="side-praise-avatar" src="assets/mom-praise.png" alt="妈妈">
+      <div class="side-praise-text">${text}</div>`;
+    document.body.appendChild(box);
+    const timer = setTimeout(() => {
+      box.classList.add('out');
+      const t = setTimeout(() => box.remove(), 320);
+      if (t && typeof t.unref === 'function') t.unref();
+    }, this.SIDE_TTL);
     if (timer && typeof timer.unref === 'function') timer.unref();
   },
 

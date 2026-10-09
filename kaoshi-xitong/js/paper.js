@@ -108,7 +108,7 @@ const Paper = {
 
     return `
       <div class="pr-doc">
-        <h1>开挂补习系统（初二） · ${subjName}练习卷</h1>
+        <h1>开挂补习系统（初二、初三） · ${subjName}练习卷</h1>
         <p class="pr-range">出卷日期：${Store.todayKey(now)}　姓名：____________　班级：__________　得分：________</p>
         <p class="pr-note">共 ${items.length} 题。${srcLine}先独立完成，再对照答案订正。</p>
         ${body}

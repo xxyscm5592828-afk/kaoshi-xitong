@@ -972,6 +972,21 @@ th { color: var(--muted); font-weight: 600; font-size: 13px; }
 #print-area .pr-q { margin: 8px 0; padding-bottom: 6px; border-bottom: 1px dashed #999; }
 #print-area .pr-q:last-of-type { border-bottom: none; }
 #print-area .pr-q-head { font-weight: 700; }
+#print-area .pr-note { color: #444; margin: 2px 0 8px; }
+#print-area .pr-opts { margin: 2px 0 2px 16px; }
+#print-area .pr-line { border-bottom: 1px solid #999; height: 22px; margin: 10px 0 2px; }
+#print-area .pr-lines { margin: 8px 0 2px; }
+#print-area .pr-lines span { display: block; border-bottom: 1px solid #bbb; height: 24px; }
+#print-area .pr-answer-page { page-break-before: always; padding-top: 4px; }
+#print-area .pr-answer-page h2 { margin-top: 0; }
+
+/* ============ 出卷（学习工具）面板的屏幕样式 ============ */
+.paper-check { display: block; margin: 10px 0; font-size: 14px; cursor: pointer; }
+.paper-list { margin-top: 8px; }
+.paper-row { display: flex; gap: 8px; padding: 3px 0; border-bottom: 1px dashed var(--border); font-size: 13px; }
+.paper-row:last-child { border-bottom: none; }
+.paper-no { width: 20px; color: var(--muted); }
+.paper-type { margin-left: auto; color: var(--muted); }
 
 /* ===== 阶段 3：小游戏 / 彩蛋收集 / 赛季与学期卡片 ===== */
 .game-timer { font-size: 40px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--brand); margin: 8px 0 4px; }

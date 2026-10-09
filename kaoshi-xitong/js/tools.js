@@ -12,6 +12,7 @@ const Tools = {
     { subjectId: 'english', icon: '⏳', title: '英语时态时间线', desc: '过去完成→过去→现在，时态在时间轴上的位置', tool: 'english-tense' },
     { subjectId: 'physics', icon: '🧮', title: '物理公式单位卡', desc: '速度/密度/压强/浮力/功/功率，公式+单位一卡记', tool: 'physics-formula' },
     { subjectId: 'biology', icon: '🐾', title: '动物类群进化图', desc: '从腔肠到哺乳，动物主要类群由低等到高等的演化阶梯', tool: 'biology-animal' },
+    { subjectId: '', icon: '📝', title: '出一份练习卷', desc: '按弱项 / 错题 / 随机抽题，生成一份可打印的纸质练习卷（各科或综合）', tool: 'paper' },
   ],
 
   // 通用辅助：KP 存在则返回 data-kp 属性；否则空

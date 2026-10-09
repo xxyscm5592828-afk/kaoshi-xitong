@@ -1,0 +1,172 @@
+// 出卷：按练习数据生成可打印的纸质练习卷（弱项 / 错题 / 随机 × 各科 / 综合）
+// 入口在「学习工具」目录；打印复用 Report.openPrint + #print-area 的 .pr-doc 打印样式
+const Paper = {
+  // 出卷配置（内存态）：subjectId 为空表示综合（跨全部科目）
+  state: { subjectId: '', source: 'weak', count: 12, withAnswer: false },
+  _items: [], // 当前这批抽中的题目（打印与预览共用同一批）
+
+  TYPE_NAME: { single: '单选', judge: '判断', multi: '多选', fill: '填空', subjective: '主观' },
+  LETTERS: 'ABCDEFG',
+
+  _shuffle(arr) {
+    const a = arr.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  },
+
+  // 选题：source = weak（弱项知识点）/ wrong（尚未销号的错题）/ random（随机）
+  // 题池不足时用该范围内的其它题补足；返回至多 count 道去重题目
+  pick(cfg, now) {
+    const inScope = q => !cfg.subjectId || q.subjectId === cfg.subjectId;
+    const all = Store.questions.filter(inScope);
+    let picked = [];
+
+    if (cfg.source === 'wrong') {
+      const qIdx = Store.questionIndex();
+      const recs = (Store.wrongbook || []).filter(r => r.status !== '已销号' && (!cfg.subjectId || r.subjectId === cfg.subjectId));
+      picked = this._shuffle(recs.map(r => qIdx[r.questionId]).filter(q => q && inScope(q)));
+    } else if (cfg.source === 'weak') {
+      // 掌握度 < 85 的 L4 知识点，分数低者优先；各点题池轮询交错，保证覆盖多个弱点
+      const weak = Store.knowledgePoints
+        .filter(k => k.level === 4 && (!cfg.subjectId || k.subjectId === cfg.subjectId))
+        .map(k => ({ id: k.id, eff: Mastery.decay(Store.mastery[k.id] || Mastery.default(), now).score }))
+        .filter(x => x.eff < 85)
+        .sort((a, b) => a.eff - b.eff);
+      const pools = weak.map(x => this._shuffle(Store.questions.filter(q => q.knowledgePointId === x.id)));
+      for (let round = 0; pools.some(p => p[round]); round++) {
+        for (const p of pools) if (p[round]) picked.push(p[round]);
+      }
+    } else {
+      picked = this._shuffle(all);
+    }
+
+    const uniq = [];
+    const seen = new Set();
+    for (const q of picked) {
+      if (q && !seen.has(q.id)) { seen.add(q.id); uniq.push(q); }
+    }
+    if (uniq.length < cfg.count) {
+      for (const q of this._shuffle(all)) {
+        if (uniq.length >= cfg.count) break;
+        if (!seen.has(q.id)) { seen.add(q.id); uniq.push(q); }
+      }
+    }
+    return uniq.slice(0, cfg.count);
+  },
+
+  // 答案展示（选择/判断带选项字母；多选逐项；其余原样）
+  _ans(q) {
+    const L = this.LETTERS;
+    if ((q.type === 'single' || q.type === 'judge') && q.options) {
+      const i = Number(q.answer);
+      return q.options[i] != null ? `${L[i]}. ${q.options[i]}` : String(q.answer);
+    }
+    if (q.type === 'multi' && q.options) {
+      return (Array.isArray(q.answer) ? q.answer : [q.answer])
+        .map(i => (q.options[Number(i)] != null ? `${L[Number(i)]}. ${q.options[Number(i)]}` : String(i))).join('　');
+    }
+    return String(q.answer == null || q.answer === '' ? '（略）' : q.answer);
+  },
+
+  // 券面 HTML（打印内容）：卷头 + 题目 + 可选答案页
+  renderHTML(items, cfg, now) {
+    const subjName = cfg.subjectId ? (Store.subjects.find(s => s.id === cfg.subjectId) || {}).name : '综合';
+    const showSubj = !cfg.subjectId; // 综合卷每题标注科目
+    const srcLine = cfg.source === 'wrong'
+      ? '题目来自孩子尚未销号的错题。'
+      : cfg.source === 'weak' ? '题目来自孩子当前偏弱的知识点。' : '题目为随机抽取。';
+
+    const body = items.map((q, i) => {
+      const sub = Store.subjects.find(s => s.id === q.subjectId);
+      const tag = showSubj && sub ? `${sub.name} · ` : '';
+      const opts = (q.options && q.options.length)
+        ? `<div class="pr-opts">${q.options.map((o, j) => `<div class="pr-opt">${this.LETTERS[j]}. ${o}</div>`).join('')}</div>`
+        : '';
+      const work = q.type === 'subjective'
+        ? '<div class="pr-lines"><span></span><span></span><span></span></div>'
+        : '<div class="pr-line"></div>';
+      return `<div class="pr-q">
+        <div class="pr-q-head">${i + 1}. ［${tag}${kpName(q.knowledgePointId)}］（${this.TYPE_NAME[q.type] || q.type}）</div>
+        <div>${q.stem}</div>
+        ${opts}
+        ${work}
+      </div>`;
+    }).join('');
+
+    const ansPage = cfg.withAnswer
+      ? `<div class="pr-answer-page">
+          <h2>参考答案与解析</h2>
+          ${items.map((q, i) => `<div class="pr-q">
+            <div class="pr-q-head">${i + 1}. ${this._ans(q)}</div>
+            ${q.explanation ? `<div>解析：${q.explanation}</div>` : ''}
+          </div>`).join('')}
+        </div>`
+      : '';
+
+    return `
+      <div class="pr-doc">
+        <h1>开挂补习系统（初二） · ${subjName}练习卷</h1>
+        <p class="pr-range">出卷日期：${Store.todayKey(now)}　姓名：____________　班级：__________　得分：________</p>
+        <p class="pr-note">共 ${items.length} 题。${srcLine}先独立完成，再对照答案订正。</p>
+        ${body}
+        ${ansPage}
+        <p class="pr-foot">本卷由系统根据练习数据自动生成。</p>
+      </div>`;
+  },
+
+  print() {
+    if (!this._items.length) { alert('这一范围内暂时没有可出的题，换个范围或题源试试。'); return; }
+    Report.openPrint(this.renderHTML(this._items, this.state, Date.now()));
+  },
+
+  // 「学习工具」页里的交互面板（配置 → 预览 → 打印）
+  render(el, back) {
+    const st = this.state;
+    const now = Date.now();
+    this._items = this.pick({ subjectId: st.subjectId, source: st.source, count: st.count }, now);
+
+    const ranges = [{ id: '', name: '综合' }].concat(Store.subjects.map(s => ({ id: s.id, name: s.name })));
+    const sources = [{ k: 'weak', n: '弱项' }, { k: 'wrong', n: '错题' }, { k: 'random', n: '随机出题' }];
+    const counts = [8, 12, 16];
+    const subjName = st.subjectId ? (Store.subjects.find(s => s.id === st.subjectId) || {}).name : '综合';
+    const srcName = (sources.find(s => s.k === st.source) || {}).n;
+
+    const list = this._items.map((q, i) => {
+      const sub = Store.subjects.find(s => s.id === q.subjectId);
+      return `<div class="paper-row"><span class="paper-no">${i + 1}</span><span class="muted">${sub ? sub.name : ''} · ${kpName(q.knowledgePointId)}</span><span class="paper-type">${this.TYPE_NAME[q.type] || q.type}</span></div>`;
+    }).join('');
+
+    el.innerHTML = `
+      <div class="card">
+        <div class="learn-head"><h2>📝 出一份练习卷</h2><button class="btn secondary small" id="paper-back">← 回工具目录</button></div>
+        <p class="muted">按孩子的练习数据出一份可打印的练习卷：选范围、选题源、题量，点「打印」即可（黑白打印友好）。</p>
+        <div class="field"><label>范围</label><div class="subject-bar">
+          ${ranges.map(r => `<button class="subject-chip${st.subjectId === r.id ? ' active' : ''}" data-range="${r.id}">${r.name}</button>`).join('')}
+        </div></div>
+        <div class="field"><label>题源</label><div class="subject-bar">
+          ${sources.map(s => `<button class="subject-chip${st.source === s.k ? ' active' : ''}" data-source="${s.k}">${s.n}</button>`).join('')}
+        </div></div>
+        <div class="field"><label>题量</label><div class="subject-bar">
+          ${counts.map(c => `<button class="subject-chip${st.count === c ? ' active' : ''}" data-count="${c}">${c} 题</button>`).join('')}
+        </div></div>
+        <label class="paper-check"><input type="checkbox" id="paper-ans"${st.withAnswer ? ' checked' : ''}> 附参考答案与解析（打印时另起一页）</label>
+        <div class="session-actions">
+          <button class="btn" id="paper-print">🖨️ 打印这份卷子</button>
+          <button class="btn secondary" id="paper-reroll">🔄 换一批</button>
+        </div>
+        <p class="muted">本次：${subjName} · ${srcName} · ${this._items.length} 题${this._items.length === 0 ? '（暂无可用题目，换个范围或题源试试）' : ''}</p>
+        <div class="paper-list">${list}</div>
+      </div>`;
+
+    el.querySelector('#paper-back').addEventListener('click', back);
+    el.querySelectorAll('[data-range]').forEach(b => b.addEventListener('click', () => { st.subjectId = b.dataset.range; this.render(el, back); }));
+    el.querySelectorAll('[data-source]').forEach(b => b.addEventListener('click', () => { st.source = b.dataset.source; this.render(el, back); }));
+    el.querySelectorAll('[data-count]').forEach(b => b.addEventListener('click', () => { st.count = Number(b.dataset.count); this.render(el, back); }));
+    el.querySelector('#paper-ans').addEventListener('change', e => { st.withAnswer = e.target.checked; });
+    el.querySelector('#paper-print').addEventListener('click', () => this.print());
+    el.querySelector('#paper-reroll').addEventListener('click', () => this.render(el, back));
+  },
+};

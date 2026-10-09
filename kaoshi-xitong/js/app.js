@@ -2286,7 +2286,11 @@ const App = {
 
   // ================= 学习工具（历史时间轴 / 地理地图，纯本地 SVG） =================
   renderTools(el) {
-    const detail = this._toolDetail; // 'timeline' | 'china-map' | 'world-map' | null
+    const detail = this._toolDetail; // 'timeline' | 'china-map' | 'world-map' | 'paper' | null
+    if (detail === 'paper') {
+      Paper.render(el, () => { this._toolDetail = null; this.renderTools(el); });
+      return;
+    }
     if (detail) {
       const meta = { timeline: ['📜 历史时间轴', '从鸦片战争到新时代，点任意事件跳对应知识点微课'],
         'china-map': ['🗺️ 中国地图示意', '三级阶梯、长江黄河、四大地理区域、黑河—腾冲线'],

@@ -360,7 +360,7 @@ th { color: var(--muted); font-weight: 600; font-size: 13px; }
 .plan-card h2 { margin: 0 0 8px; }
 .plan-card > .muted { margin: 0; }
 .plan-card .session-actions { margin-top: 12px; }
-.plan-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0 0; }
+.plan-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin: 10px 0 0; }
 
 .plan-block {
   display: flex;

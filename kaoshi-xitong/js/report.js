@@ -1,4 +1,4 @@
-// 报告 v2：技能树点亮视图（游戏语言翻译层）+ 按章热力图 + 每日战报 + 用时分析
+// 报告 v2：知识树点亮视图（游戏语言翻译层）+ 按章热力图 + 每日战报 + 用时分析
 // 规则来源：开发文档 §10.1 §11.5（「距离点亮还差X%」正向框架）
 const Report = {
   effective(m, now) {
@@ -18,7 +18,7 @@ const Report = {
     return m.score - Mastery.decay(m, now).score >= 15;
   },
 
-  // 溯源标签（技能树节点）：弱点显示根因点 / 需回炉的点（§5.5）
+  // 溯源标签（知识树节点）：弱点显示根因点 / 需回炉的点（§5.5）
   // 未测（无记录）不贴标签；根因即自身不贴标签
   diagTagHTML(kp, mastery, kpIndex) {
     const m = mastery[kp.id];
@@ -127,9 +127,13 @@ const Report = {
       out.closures += st.closures || 0;
     }
     const cutoff = now - 6 * DAY;
+    // A1 错因聚合：独立归因直接读错题记录的自选错因（attempts.errorType 恒为 null，此前统计恒为 0）
+    for (const r of Store.wrongbook || []) {
+      if (!r.firstWrongAt || r.firstWrongAt < cutoff) continue;
+      if (r.errorType) out.attributions += 1;
+    }
     for (const a of Store.attempts) {
       if (!a.timestamp || a.timestamp < cutoff) continue;
-      if (a.errorType) out.attributions += 1;
       if (a.correct === true && (a.rating === 'S' || a.rating === 'A')) out.effSeconds += a.actualTime || 0;
     }
     out.accuracy = out.answered ? Math.round(100 * out.correct / out.answered) : 0;
@@ -158,6 +162,103 @@ const Report = {
         <div class="week-rows">${rows.map(r => `<div>${r}</div>`).join('')}</div>
         <div class="week-bars">${bars}</div>
       </div></div>`;
+  },
+
+  // 周报叙事：把「数据罗列」翻译成三问三答（这周推进了什么 / 哪一类题还在卡 / 下周主攻哪个点）
+  // 直击「不会梳理知识网、不知道哪类题不会」：点名知识点清单 + 顽固错题错因/根因 + 唯一下一步
+  weekNarrativeHTML(now) {
+    const w = this.weekStats(now);
+    if (!w.answered) {
+      return `<div class="card"><h2>📖 本周小结</h2><div class="empty">这周还没开张。先做一组，小结会自动出现在这里。</div></div>`;
+    }
+    const leaves = this.chapters(now).flatMap(c => c.leaves);
+    const litNames = leaves.filter(l => l.tier.key === 'lit').map(l => l.kp.name);
+    const solidNames = leaves.filter(l => l.tier.key === 'solid').map(l => l.kp.name);
+    const nameList = (arr, cap) => arr.slice(0, cap).map(n => `「${n}」`).join('') + (arr.length > cap ? ` 等 ${arr.length} 个` : '');
+
+    // ① 这周推进了什么
+    const win = [];
+    if (w.litCount > 0) win.push(`新点亮 <strong>${w.litCount}</strong> 个知识点`);
+    win.push(`答题 <strong>${w.answered}</strong> 道、正确率 <strong>${w.accuracy}%</strong>`);
+    if (w.closures > 0) win.push(`错题销号 <strong>${w.closures}</strong> 道`);
+    const litLine = litNames.length ? `<div class="muted">已经亮着的点：${nameList(litNames, 8)}</div>` : '';
+    const solidLine = solidNames.length ? `<div class="muted">还差一口气的：${nameList(solidNames, 6)}</div>` : '';
+
+    // ② 哪一类题还在卡：顽固错题 → 自选错因聚类 → 先修根因
+    const stubborn = Wrongbook.stubborn();
+    const kpIndex = {};
+    for (const k of Store.knowledgePoints) kpIndex[k.id] = k;
+    let stuckLine;
+    if (stubborn.length === 0) {
+      stuckLine = '<div>这周没有反复卡住的题，稳。</div>';
+    } else {
+      const stuckNames = [...new Set(stubborn.map(r => kpName(r.knowledgePointId)))];
+      const causeCount = {};
+      for (const r of stubborn) if (r.errorType) causeCount[r.errorType] = (causeCount[r.errorType] || 0) + 1;
+      const topCause = Object.keys(causeCount).sort((a, b) => causeCount[b] - causeCount[a])[0];
+      const roots = new Set();
+      for (const r of stubborn) {
+        const kp = kpIndex[r.knowledgePointId];
+        if (!kp) continue;
+        const diag = Mastery.diagnose(kp, Store.mastery, kpIndex);
+        if (Mastery.needsRelearn(diag)) roots.add(diag.root.name);
+      }
+      stuckLine = `<div>还有 <strong>${stubborn.length}</strong> 道题反复卡住，都在这些点：${nameList(stuckNames, 6)}。</div>`
+        + (topCause ? `<div class="muted">错的类型集中在「${topCause}」——下次做题先盯住这一步。</div>` : '')
+        + (roots.size ? `<div class="muted">往根上挖，可能卡在${nameList([...roots], 4)}，把这个先修点补牢比硬刷划算。</div>` : '');
+    }
+
+    // ③ 下周主攻哪个点
+    const t = this.nextTarget(now);
+    const nextLine = t
+      ? `<div>下周主攻：<strong>${t.kp.name}</strong>，还差 <strong>${t.gap}%</strong> 点亮${t.rusted ? '（有点生锈，先保养一下）' : ''}。</div>`
+      : '<div>知识树基本点亮，保持每天一组别让它回潮就行。</div>';
+
+    return `<div class="card"><h2>📖 本周小结</h2>
+      <div>① 这周推进了：${win.join('、')}。</div>
+      ${litLine}${solidLine}
+      <div style="margin-top:8px"><strong>② 哪一类还在卡</strong></div>
+      ${stuckLine}
+      <div style="margin-top:8px"><strong>③ 下周主攻</strong></div>
+      ${nextLine}
+    </div>`;
+  },
+
+  // 成绩汇报卡（学习汇报页）：最新一次考试/测验的各科成绩 + 班级/年级排名，并对比上一条的涨跌
+  // 分数上升 / 名次前进 = 进步（绿色 ▲），反之红色 ▼
+  gradeCardHTML() {
+    const all = (Store.gradeReports || []).slice();
+    if (all.length === 0) {
+      return `<div class="card"><h2>📈 成绩与排名</h2><div class="empty">还没有成绩记录。去主页点「成绩汇报」，把最近一次考试或测验的各科分数、班级与年级排名填进去，这里就会开始跟踪变化。</div></div>`;
+    }
+    all.sort((a, b) => (a.date === b.date ? (a.createdAt || 0) - (b.createdAt || 0) : (a.date < b.date ? -1 : 1)));
+    const cur = all[all.length - 1];
+    const prev = all.length > 1 ? all[all.length - 2] : null;
+    const subjects = Store.subjects.filter(s => !s.exam);
+    // better 为正表示进步
+    const deltaTag = (better) => better > 0
+      ? ` <span class="up">▲${better}</span>`
+      : better < 0 ? ` <span class="down">▼${-better}</span>` : ' <span class="muted">持平</span>';
+    const scoreCell = (id) => {
+      const v = cur.scores ? cur.scores[id] : null;
+      if (v == null) return '<span class="muted">—</span>';
+      if (!prev) return String(v);
+      const p = prev.scores ? prev.scores[id] : null;
+      return p == null ? String(v) : String(v) + deltaTag(v - p);
+    };
+    const rankCell = (key, label) => {
+      const v = cur[key];
+      if (v == null) return `${label} <span class="muted">—</span>`;
+      if (!prev || prev[key] == null) return `${label} 第 ${v} 名`;
+      return `${label} 第 ${v} 名${deltaTag(prev[key] - v)}`; // 名次变小 = 进步
+    };
+    const rows = subjects.map(s => `<tr><td>${s.name}</td><td>${scoreCell(s.id)}</td></tr>`).join('');
+    const tail = prev ? '' : '<p class="muted">这是第一条记录——下次录入后，这里会显示每科的涨跌和班级、年级排名的变化。</p>';
+    return `<div class="card"><h2>📈 成绩与排名 <span class="muted">最新：${cur.date}</span></h2>
+      <table><thead><tr><th>科目</th><th>成绩${prev ? '（较上次）' : ''}</th></tr></thead><tbody>${rows}</tbody></table>
+      <div style="margin-top:8px">${rankCell('classRank', '班级排名')} · ${rankCell('gradeRank', '年级排名')}</div>
+      ${tail}
+    </div>`;
   },
 
   // 各科综合掌握度（加权平均；打印周报与周视图共用）
@@ -268,7 +369,7 @@ const Report = {
     const subjRows = subj.map(s => `<tr><td>${s.name}</td><td>${s.score}</td><td>${s.lit}/${s.total}</td></tr>`).join('');
     return `
       <div class="pr-doc">
-        <h1>初二全科智能补习 · 本周战报</h1>
+        <h1>开挂补习系统（初二） · 本周战报</h1>
         <p class="pr-range">统计区间：${w.days[0].key} 至 ${w.days[6].key}</p>
         <h2>本周成果</h2>
         <ul>
@@ -290,16 +391,58 @@ const Report = {
       </div>`;
   },
 
+  // 打印版本周未解决错题清单（近 7 天产生、尚未销号的错题；黑白打印友好）
+  printWrongsHTML(now) {
+    const DAY = 86400000;
+    const cutoff = now - 6 * DAY;
+    const qIdx = Store.questionIndex();
+    const typeName = { single: '单选', judge: '判断', multi: '多选', fill: '填空', subjective: '主观' };
+    const fmtAns = (q, v) => {
+      if (q && (q.type === 'single' || q.type === 'judge') && q.options) return q.options[Number(v)] || String(v);
+      if (q && q.type === 'multi') return (Array.isArray(v) ? v : [v]).map(i => q.options[Number(i)]).join('　');
+      return String(v == null || v === '' ? '（未作答）' : v);
+    };
+    const items = (Store.wrongbook || [])
+      .filter(r => r.status !== '已销号' && r.firstWrongAt >= cutoff)
+      .sort((a, b) => a.firstWrongAt - b.firstWrongAt);
+    const rows = items.map((r, i) => {
+      const q = qIdx[r.questionId];
+      const subj = (Store.subjects.find(s => s.id === r.subjectId) || {}).name || '—';
+      return `<div class="pr-q">
+        <div class="pr-q-head">${i + 1}. ［${subj} · ${kpName(r.knowledgePointId)}］${typeName[q ? q.type : ''] || ''} · ${r.status}</div>
+        <div>${q ? q.stem : '（题目已从题库移除）'}</div>
+        <div>我的作答：${fmtAns(q, r.myAnswer)}　正确答案：${fmtAns(q, r.correctAnswer)}</div>
+        ${q && q.explanation ? `<div>解析：${q.explanation}</div>` : ''}
+      </div>`;
+    }).join('');
+    return `
+      <div class="pr-doc">
+        <h1>开挂补习系统（初二） · 本周未解决错题</h1>
+        <p class="pr-range">统计区间：${Store.todayKey(cutoff)} 至 ${Store.todayKey(now)}　共 ${items.length} 道</p>
+        ${items.length ? rows : '<p>本周没有未解决的错题——答错的都走完闭环销号了，漂亮。</p>'}
+        <p class="pr-note">这些是本周答错、还没走完「原题重做(D3) → 变式(D7)」闭环的题。让孩子每道讲一遍思路（哪里错、正确怎么想），讲得清楚就是真会了。</p>
+        <p class="pr-foot">本清单由系统根据本周练习数据自动生成。</p>
+      </div>`;
+  },
+
   // 触发浏览器打印（打印样式只输出本报告，其余界面隐藏）
-  openPrintWeekly(now) {
+  openPrint(html) {
     let area = document.getElementById('print-area');
     if (!area) {
       area = document.createElement('div');
       area.id = 'print-area';
       document.body.appendChild(area);
     }
-    area.innerHTML = this.printWeeklyHTML(now);
+    area.innerHTML = html;
     window.print();
+  },
+
+  openPrintWeekly(now) {
+    this.openPrint(this.printWeeklyHTML(now));
+  },
+
+  openPrintWrongs(now) {
+    this.openPrint(this.printWrongsHTML(now));
   },
 
   render(el) {
@@ -321,22 +464,17 @@ const Report = {
 
     let html = `
       <div class="card overview">
-        <h2>技能树总览</h2>
+        <h2>知识树总览</h2>
         <div class="overview-stats">
           <div class="stat"><span class="stat-num">${overall}</span><span class="stat-label">综合掌握度</span></div>
-          <div class="stat"><span class="stat-num">${lit}<small>/${allLeaves.length}</small></span><span class="stat-label">已点亮技能</span></div>
+          <div class="stat"><span class="stat-num">${lit}<small>/${allLeaves.length}</small></span><span class="stat-label">已点亮知识点</span></div>
           <div class="stat"><span class="stat-num">${bounty}</span><span class="stat-label">悬赏进行中</span></div>
         </div>
         <div class="exp-bar big"><div class="exp-fill" style="width:${overall}%"></div></div>
         <p class="muted">距离全部点亮还差 ${100 - overall}%——每亮一盏灯，都是实打实的进步。</p>
-        <div class="session-actions"><button class="btn secondary" id="print-weekly">🖨 打印本周战报（给家长）</button></div>
       </div>`;
 
-    html += this.battleCardHTML(now);
-    html += this.weekCardHTML(now);
-    html += '<div id="weekly-ai-slot"></div>';
-
-    // 技能树：按科目分组、按章分块
+    // 知识树：按科目分组、按章分块
     const jumpSubjects = [];
     for (const ch of chapters) if (!jumpSubjects.includes(ch.subjectId)) jumpSubjects.push(ch.subjectId);
     html += '<div class="subject-jump-bar">'
@@ -406,9 +544,7 @@ const Report = {
     html += this.termReviewCardHTML(now);
 
     el.innerHTML = html;
-    const pb = el.querySelector('#print-weekly');
-    if (pb) pb.addEventListener('click', () => this.openPrintWeekly(now));
-    // 技能节点 → 学习页（诊断-学-练一体，辅导主入口）
+    // 知识节点 → 学习页（诊断-学-练一体，辅导主入口）
     el.querySelectorAll('.skill-node[data-kp]').forEach(node => {
       node.addEventListener('click', () => App.openLearn(node.dataset.kp));
     });
@@ -419,6 +555,52 @@ const Report = {
         if (target && target.scrollIntoView) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
       });
     });
+  },
+
+  // 学情记忆审计（DeepTutor A4）：只读视图，展示系统记住了什么（错因清单 / 掌握度来源 / 销号记录）
+  // 全走本地规则：掌握度 = 正确率×用时×指数遗忘；错因 = 孩子自选归因；销号 = D0→D3→D7 走完
+  memoryAudit() {
+    const kpIndex = {};
+    for (const k of Store.knowledgePoints) kpIndex[k.id] = k;
+    const wb = Store.wrongbook || [];
+    const mastery = Store.mastery || {};
+    const name = id => (kpIndex[id] && kpIndex[id].name) || id;
+
+    // 错因清单：按自选错因聚合（只统计选过错因的记录）
+    const causeCount = {}, causeKps = {};
+    for (const r of wb) {
+      if (!r.errorType) continue;
+      causeCount[r.errorType] = (causeCount[r.errorType] || 0) + 1;
+      (causeKps[r.errorType] = causeKps[r.errorType] || new Set()).add(name(r.knowledgePointId));
+    }
+    const causes = Object.keys(causeCount).map(k => ({
+      key: k, count: causeCount[k], kps: [...causeKps[k]].slice(0, 4),
+    }));
+
+    // 销号记录：最近 5 条
+    const closed = wb.filter(r => r.status === '已销号');
+    const recentClosures = closed.slice(-5).reverse().map(r => ({
+      name: name(r.knowledgePointId),
+      at: r.closedAt ? new Date(r.closedAt).toISOString().slice(0, 10) : '—',
+    }));
+
+    // 掌握度来源：条目数 / 已点亮（≥85）/ 薄弱 Top5（按分升序，界面显示还会按遗忘曲线衰减）
+    const entries = Object.entries(mastery).filter(([, m]) => m && typeof m.score === 'number');
+    const lit = entries.filter(([, m]) => m.score >= 85).length;
+    const weak = entries
+      .filter(([, m]) => m.score < 85)
+      .sort((a, b) => a[1].score - b[1].score)
+      .slice(0, 5)
+      .map(([id, m]) => ({ name: name(id), score: m.score }));
+
+    return {
+      causes,
+      closedCount: closed.length, recentClosures,
+      masteryCount: entries.length, litCount: lit, weak,
+      attemptsCount: (Store.attempts || []).length,
+      lessonCount: Object.keys(Store.lessons || {}).length,
+      exportedAt: new Date().toISOString(),
+    };
   },
 };
 

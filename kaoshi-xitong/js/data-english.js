@@ -88,128 +88,128 @@
     // ── p1 名词单复数与不规则变化 ──
     q('eng8a-p1-q1', 'eng8a-p1', 'single', 'There are three ______ in the box.',
       ['knife', 'knifes', 'knives', 'knifs'], 2,
-      '以 -fe 结尾的名词变复数时改 f/fe 为 v 再加 -es：knife → knives。', 2, 30),
+      '以 -fe 结尾的名词变复数时改 f/fe 为 v 再加 -es：knife → knives。', 2, 45),
     q('eng8a-p1-q2', 'eng8a-p1', 'fill', '用括号内单词的正确形式填空：The ______ (child) are playing football on the playground.',
-      [], 'children', 'child 的复数是 children，属不规则变化。', 2, 35),
+      [], 'children', 'child 的复数是 children，属不规则变化。', 2, 40),
 
     // ── p2 形容词与副词词形转换 ──
     q('eng8a-p2-q1', 'eng8a-p2', 'single', 'He speaks English very ______.',
       ['good', 'well', 'nice', 'fine'], 1,
-      '修饰动词 speaks 要用副词 well；good / nice / fine 是形容词。', 2, 30),
+      '修饰动词 speaks 要用副词 well；good / nice / fine 是形容词。', 2, 45),
     q('eng8a-p2-q2', 'eng8a-p2', 'fill', '用括号内单词的正确形式填空：She is ______ (real) interested in music.',
-      [], 'really', '修饰形容词 interested 要用副词 really。', 2, 30),
+      [], 'really', '修饰形容词 interested 要用副词 really。', 2, 40),
 
     // ── p3 动词不规则过去式拼写 ──
     q('eng8a-p3-q1', 'eng8a-p3', 'single', 'Which of the following is the past tense of "buy"?',
       ['buyed', 'bought', 'boughted', 'boughten'], 1,
-      'buy 是不规则动词，过去式和过去分词都是 bought。', 1, 25),
+      'buy 是不规则动词，过去式和过去分词都是 bought。', 1, 35),
     q('eng8a-p3-q2', 'eng8a-p3', 'fill', '用括号内动词的适当形式填空：Last Sunday we ______ (go) to the museum.',
-      [], 'went', 'Last Sunday 提示一般过去时，go 的过去式是 went。', 2, 30),
+      [], 'went', 'Last Sunday 提示一般过去时，go 的过去式是 went。', 2, 40),
 
     // ── p4 易混词辨析 ──
     q('eng8a-p4-q1', 'eng8a-p4', 'single', 'Could you ______ me your pen? Mine is broken.',
       ['lend', 'borrow', 'keep', 'take'], 0,
-      'lend sb sth 表示“把某物借出给某人”；borrow 是“借入”（borrow sth from sb）。', 2, 40),
+      'lend sb sth 表示“把某物借出给某人”；borrow 是“借入”（borrow sth from sb）。', 2, 45),
     q('eng8a-p4-q2', 'eng8a-p4', 'judge', 'The sentence "Please say me the truth." is grammatically correct.',
       ['对', '错'], 1,
-      'say 不能带“人”作宾语，应为 tell me the truth；say sth to sb 才用 say。', 2, 30),
+      'say 不能带“人”作宾语，应为 tell me the truth；say sth to sb 才用 say。', 2, 40),
 
     // ── p5 构词法 ──
     q('eng8a-p5-q1', 'eng8a-p5', 'fill', '用括号内单词的正确形式填空：His ______ (care) driving caused the accident.',
-      [], 'careless', '修饰名词 driving 用形容词 careless（“粗心的”）。', 3, 40),
+      [], 'careless', '修饰名词 driving 用形容词 careless（“粗心的”）。', 3, 45),
     q('eng8a-p5-q2', 'eng8a-p5', 'single', 'The word "unhappy" has a prefix "un-". What does "un-" mean?',
       ['very', 'not', 'again', 'before'], 1,
-      'un- 是表否定的前缀，unhappy = not happy。', 1, 25),
+      'un- 是表否定的前缀，unhappy = not happy。', 1, 35),
 
     // ── p6 一般现在时第三人称单数 ──
     q('eng8a-p6-q1', 'eng8a-p6', 'single', 'My brother ______ to school by bike every day.',
       ['go', 'goes', 'going', 'went'], 1,
-      'every day 提示一般现在时，主语 My brother 是第三人称单数，动词加 -es。', 1, 25),
+      'every day 提示一般现在时，主语 My brother 是第三人称单数，动词加 -es。', 1, 35),
     q('eng8a-p6-q2', 'eng8a-p6', 'fill', '用括号内动词的适当形式填空：The little girl ______ (watch) TV every evening.',
-      [], 'watches', '主语为第三人称单数，以 -ch 结尾的动词加 -es。', 2, 30),
+      [], 'watches', '主语为第三人称单数，以 -ch 结尾的动词加 -es。', 2, 40),
 
     // ── p7 频率副词 ──
     q('eng8a-p7-q1', 'eng8a-p7', 'single', 'Which sentence is correct?',
       ['He is always late for class.', 'He always is late for class.', 'Always he is late for class.', 'He is late always for class.'], 0,
-      '频率副词放在 be 动词之后、实义动词之前。', 2, 40),
+      '频率副词放在 be 动词之后、实义动词之前。', 2, 45),
     q('eng8a-p7-q2', 'eng8a-p7', 'fill', '根据汉语提示补全句子（每空一词）：他上课从不迟到。He is ______ late for class.',
-      [], 'never', '“从不”用频率副词 never，放在 be 动词之后。', 2, 30),
+      [], 'never', '“从不”用频率副词 never，放在 be 动词之后。', 2, 40),
 
     // ── p8 比较级与最高级的构成 ──
     q('eng8a-p8-q1', 'eng8a-p8', 'single', 'This book is ______ than that one.',
       ['interesting', 'more interesting', 'most interesting', 'the most interesting'], 1,
-      'than 提示比较级；interesting 是多音节词，前加 more。', 2, 35),
+      'than 提示比较级；interesting 是多音节词，前加 more。', 2, 45),
     q('eng8a-p8-q2', 'eng8a-p8', 'fill', '用括号内单词的正确形式填空：The Yangtze River is the ______ (long) river in China.',
-      [], 'longest', 'in China 限定三者以上范围，用最高级 longest，且前面有 the。', 2, 35),
+      [], 'longest', 'in China 限定三者以上范围，用最高级 longest，且前面有 the。', 2, 40),
 
     // ── p9 比较级常用句型 ──
     q('eng8a-p9-q1', 'eng8a-p9', 'single', 'Tom is as ______ as his brother.',
       ['tall', 'taller', 'tallest', 'the tallest'], 0,
-      'as ... as 结构中间用形容词或副词原级。', 2, 35),
+      'as ... as 结构中间用形容词或副词原级。', 2, 45),
     q('eng8a-p9-q2', 'eng8a-p9', 'single', 'Shanghai is one of ______ cities in China.',
       ['big', 'bigger', 'the biggest', 'biggest'], 2,
-      'one of the + 最高级 + 复数名词，表示“最……的之一”。', 3, 45),
+      'one of the + 最高级 + 复数名词，表示“最……的之一”。', 3, 50),
 
     // ── p10 过去进行时的构成与用法 ──
     q('eng8a-p10-q1', 'eng8a-p10', 'single', "At eight o'clock last night, I ______ my homework.",
       ['do', 'did', 'was doing', 'am doing'], 2,
-      '过去某一时刻正在进行的动作用过去进行时 was/were + doing。', 2, 35),
+      '过去某一时刻正在进行的动作用过去进行时 was/were + doing。', 2, 45),
     q('eng8a-p10-q2', 'eng8a-p10', 'fill', '用括号内动词的适当形式填空：They ______ (play) basketball at four yesterday afternoon.',
       [], 'were playing', '主语 They 为复数，过去进行时用 were + doing。', 2, 40),
 
     // ── p11 过去进行时与一般过去时的区别 ──
     q('eng8a-p11-q1', 'eng8a-p11', 'single', 'My father ______ TV when I got home.',
       ['watched', 'was watching', 'watches', 'has watched'], 1,
-      'when 从句用一般过去时表示突然发生，主句用过去进行时表示当时正在进行。', 3, 45),
+      'when 从句用一般过去时表示突然发生，主句用过去进行时表示当时正在进行。', 3, 50),
     q('eng8a-p11-q2', 'eng8a-p11', 'judge', 'In the sentence "While I was cooking, my sister was reading.", the two actions happened at the same time.',
       ['对', '错'], 0,
-      'while 常连接两个同时进行的持续性动作，主从句都用过去进行时。', 3, 40),
+      'while 常连接两个同时进行的持续性动作，主从句都用过去进行时。', 3, 45),
 
     // ── p12 不定式作宾语与宾语补足语 ──
     q('eng8a-p12-q1', 'eng8a-p12', 'single', 'I want ______ a doctor when I grow up.',
       ['be', 'to be', 'being', 'been'], 1,
-      'want to do sth，不定式作宾语。', 1, 25),
+      'want to do sth，不定式作宾语。', 1, 35),
     q('eng8a-p12-q2', 'eng8a-p12', 'single', 'My mother asked me ______ the room.',
       ['clean', 'to clean', 'cleaning', 'cleaned'], 1,
-      'ask sb to do sth，不定式作宾语补足语。', 2, 30),
+      'ask sb to do sth，不定式作宾语补足语。', 2, 45),
 
     // ── p13 疑问词 + 不定式 ──
     q('eng8a-p13-q1', 'eng8a-p13', 'fill', '用括号内词的适当形式补全句子：I don\'t know what ______ (do) next.',
-      [], 'to do', '“疑问词 + 不定式”可作宾语，what to do 意为“做什么”。', 2, 35),
+      [], 'to do', '“疑问词 + 不定式”可作宾语，what to do 意为“做什么”。', 2, 40),
     q('eng8a-p13-q2', 'eng8a-p13', 'single', 'Could you tell me how ______ to the station?',
       ['get', 'to get', 'getting', 'got'], 1,
-      'how to get to ... 是“疑问词 + 不定式”结构，作 tell 的宾语。', 2, 35),
+      'how to get to ... 是“疑问词 + 不定式”结构，作 tell 的宾语。', 2, 45),
 
     // ── p14 情态动词表推测与许可 ──
     q('eng8a-p14-q1', 'eng8a-p14', 'single', "— Whose book is this? — It ______ be Lily's. Look, her name is on it.",
       ["can't", 'must', "needn't", "shouldn't"], 1,
-      '有明确证据的肯定推测用 must（一定）；can\'t 表示“不可能”。', 3, 45),
+      '有明确证据的肯定推测用 must（一定）；can\'t 表示“不可能”。', 3, 50),
     q('eng8a-p14-q2', 'eng8a-p14', 'judge', '"You mustn\'t smoke here." means smoking is not allowed here.',
       ['对', '错'], 0,
-      'mustn\'t 表示“禁止、不允许”。', 2, 30),
+      'mustn\'t 表示“禁止、不允许”。', 2, 40),
 
     // ── p15 must 与 have to 的区别 ──
     q('eng8a-p15-q1', 'eng8a-p15', 'single', 'Tomorrow is Saturday, so I ______ get up early.',
       ["don't have to", "mustn't", "can't", "needn't to"], 0,
-      'don\'t have to 表示“不必”，符合周六不用早起；mustn\'t 是“禁止”。', 3, 45),
+      'don\'t have to 表示“不必”，符合周六不用早起；mustn\'t 是“禁止”。', 3, 50),
     q('eng8a-p15-q2', 'eng8a-p15', 'single', '— Must I hand in the homework today? — No, you ______.',
       ["mustn't", "needn't", "can't", "shouldn't"], 1,
-      'must 引导的疑问句否定回答用 needn\'t / don\'t have to，不能用 mustn\'t。', 3, 45),
+      'must 引导的疑问句否定回答用 needn\'t / don\'t have to，不能用 mustn\'t。', 3, 50),
 
     // ── p16 条件状语从句 ──
     q('eng8a-p16-q1', 'eng8a-p16', 'single', 'If it ______ tomorrow, we will stay at home.',
       ['rains', 'will rain', 'rained', 'is raining'], 0,
-      'if 引导的条件状语从句用一般现在时表将来，主句用一般将来时（主将从现）。', 3, 45),
+      'if 引导的条件状语从句用一般现在时表将来，主句用一般将来时（主将从现）。', 3, 50),
     q('eng8a-p16-q2', 'eng8a-p16', 'fill', '用括号内动词的适当形式填空：We ______ (go) to the park if the weather is fine tomorrow.',
       [], 'will go', '条件从句用一般现在时，主句用一般将来时 will + 动词原形。', 3, 45),
 
     // ── p17 完形填空 ──
     q('eng8a-p17-q1', 'eng8a-p17', 'single', 'Tom studied hard for the exam. ______, he got the best grade in his class.',
       ['However', 'As a result', 'In fact', 'Instead'], 1,
-      '前句是原因、后句是结果，用 As a result 承接。', 3, 45),
+      '前句是原因、后句是结果，用 As a result 承接。', 3, 50),
     q('eng8a-p17-q2', 'eng8a-p17', 'single', 'I wanted to buy the book, ______ it was too expensive.',
       ['but', 'so', 'because', 'or'], 0,
-      '前后为转折关系，用并列连词 but。', 2, 35),
+      '前后为转折关系，用并列连词 but。', 2, 45),
 
     // ── p18 阅读理解 ──
     q('eng8a-p18-q1', 'eng8a-p18', 'single', '阅读短文回答问题：Tom gets up at six, runs for twenty minutes, and then has breakfast. He goes to school at seven. What does Tom do first after getting up?',
@@ -222,44 +222,44 @@
     // ── p19 书面表达：时态与人称一致 ──
     q('eng8a-p19-q1', 'eng8a-p19', 'judge', 'In a diary about yesterday\'s trip, the sentence "We visit the Great Wall and take many photos." is correct.',
       ['对', '错'], 1,
-      '描述昨天发生的事应用一般过去时：We visited ... and took many photos。', 3, 40),
+      '描述昨天发生的事应用一般过去时：We visited ... and took many photos。', 3, 45),
     q('eng8a-p19-q2', 'eng8a-p19', 'single', 'Mary is my best friend. ______ often helps me with my English.',
       ['She', 'He', 'It', 'They'], 0,
-      'Mary 是女性，指代要用 She，与主语人称保持一致。', 1, 25),
+      'Mary 是女性，指代要用 She，与主语人称保持一致。', 1, 35),
 
     // ── p20 听力信息抓取 ──
     q('eng8a-p20-q1', 'eng8a-p20', 'single', '你听到：The train leaves at a quarter to nine. When does the train leave?',
       ['8:45', '9:15', '9:45', '8:15'], 0,
-      'a quarter to nine = 差一刻九点 = 8:45。', 2, 35),
+      'a quarter to nine = 差一刻九点 = 8:45。', 2, 45),
     q('eng8a-p20-q2', 'eng8a-p20', 'single', '你听到：It\'s 15 yuan for adults and half price for children. How much should a child pay?',
       ['15 yuan', '10 yuan', '7.5 yuan', '5 yuan'], 2,
-      '儿童半价：15 ÷ 2 = 7.5 元。', 2, 40),
+      '儿童半价：15 ÷ 2 = 7.5 元。', 2, 45),
 
     // ── eng8b-p1 名词、代词与数词 ──
     q('eng8b-p1-q1', 'eng8b-p1', 'single', 'There are ______ students in our school.',
       ['two hundreds', 'two hundred', 'two hundreds of', 'hundred of'], 1,
-      'hundred 前有具体数字时用单数，且不加 of。', 2, 35),
+      'hundred 前有具体数字时用单数，且不加 of。', 2, 45),
     q('eng8b-p1-q2', 'eng8b-p1', 'fill', '用括号内单词的正确形式填空：These books are ______ (we), not theirs.',
-      [], 'ours', '名词性物主代词 ours = our books，此处作表语。', 2, 35),
+      [], 'ours', '名词性物主代词 ours = our books，此处作表语。', 2, 40),
 
     // ── eng8b-p2 动词短语搭配 ──
     q('eng8b-p2-q1', 'eng8b-p2', 'single', 'Please ______ your books and open to page 20.',
       ['take out', 'take off', 'take away', 'take up'], 0,
-      'take out 拿出；take off 脱下/起飞；take away 拿走；take up 开始从事/占据。', 3, 45),
+      'take out 拿出；take off 脱下/起飞；take away 拿走；take up 开始从事/占据。', 3, 50),
     q('eng8b-p2-q2', 'eng8b-p2', 'fill', '根据汉语完成句子（每空一词）：别忘了关灯。Don\'t forget to ______ ______ the lights.',
       [], 'turn off', 'turn off 表示“关掉（电器、灯）”。', 2, 40),
 
     // ── eng8b-p3 形容词 -ed / -ing 与副词扩展 ──
     q('eng8b-p3-q1', 'eng8b-p3', 'single', 'The story is ______. I am ______ in it.',
       ['interesting; interesting', 'interested; interested', 'interesting; interested', 'interested; interesting'], 2,
-      '-ing 形容词修饰事物（令人……的），-ed 形容词修饰人的感受。', 2, 40),
+      '-ing 形容词修饰事物（令人……的），-ed 形容词修饰人的感受。', 2, 45),
     q('eng8b-p3-q2', 'eng8b-p3', 'fill', '用括号内单词的正确形式填空：He looked ______ (happy) at his new bike.',
       [], 'happily', '修饰动词 looked 要用副词 happily。', 3, 45),
 
     // ── eng8b-p4 现在完成时的构成 ──
     q('eng8b-p4-q1', 'eng8b-p4', 'single', 'I ______ already ______ my homework.',
       ['have; finished', 'has; finished', 'have; finish', 'am; finishing'], 0,
-      '主语 I 用 have，already 之后的动词用过去分词 finished。', 2, 40),
+      '主语 I 用 have，already 之后的动词用过去分词 finished。', 2, 45),
     q('eng8b-p4-q2', 'eng8b-p4', 'fill', '用括号内动词的适当形式填空：She ______ (live) in Beijing for ten years.',
       [], 'has lived', 'for ten years 表示持续到现在，用现在完成时 has + 过去分词。', 3, 45),
 
@@ -269,14 +269,14 @@
       'yesterday 是具体过去时间，用一般过去时；now 强调对现在的影响，用现在完成时。', 3, 50),
     q('eng8b-p5-q2', 'eng8b-p5', 'judge', 'The sentence "I have seen that film last week." is grammatically correct.',
       ['对', '错'], 1,
-      'last week 是明确的过去时间状语，只能与一般过去时连用：I saw that film last week。', 3, 40),
+      'last week 是明确的过去时间状语，只能与一般过去时连用：I saw that film last week。', 3, 45),
 
     // ── eng8b-p6 already / yet / ever / never / just 的位置 ──
     q('eng8b-p6-q1', 'eng8b-p6', 'single', 'Have you ______ been to the Great Wall?',
       ['ever', 'yet', 'already', 'never'], 0,
-      'ever 用于疑问句，表示“曾经”，位于过去分词之前。', 2, 35),
+      'ever 用于疑问句，表示“曾经”，位于过去分词之前。', 2, 45),
     q('eng8b-p6-q2', 'eng8b-p6', 'fill', '补全句子（每空一词）：I have ______ finished my homework, so I can play now.（表示“刚刚”）',
-      [], 'just', 'just 表示“刚刚”，位于 have 与过去分词之间。', 2, 35),
+      [], 'just', 'just 表示“刚刚”，位于 have 与过去分词之间。', 2, 40),
 
     // ── eng8b-p7 延续性动词与瞬间动词 ──
     q('eng8b-p7-q1', 'eng8b-p7', 'single', 'My grandfather ______ for three years.',
@@ -288,39 +288,39 @@
     // ── eng8b-p8 宾语从句的引导词与陈述语序 ──
     q('eng8b-p8-q1', 'eng8b-p8', 'single', 'Could you tell me ______?',
       ['where is the bank', 'where the bank is', 'where was the bank', 'the bank where is'], 1,
-      '宾语从句必须用陈述语序，即“引导词 + 主语 + 谓语”。', 3, 45),
+      '宾语从句必须用陈述语序，即“引导词 + 主语 + 谓语”。', 3, 50),
     q('eng8b-p8-q2', 'eng8b-p8', 'fill', '把两句合并为含宾语从句的句子：Where does he live? → I want to know ______ ______ ______.',
-      [], 'where he lives', '宾语从句用陈述语序且主句为现在时，从句时态不变。', 3, 50),
+      [], 'where he lives', '宾语从句用陈述语序且主句为现在时，从句时态不变。', 3, 45),
 
     // ── eng8b-p9 宾语从句的时态呼应 ──
     q('eng8b-p9-q1', 'eng8b-p9', 'single', 'He said that he ______ busy at that time.',
       ['is', 'was', 'has been', 'will be'], 1,
-      '主句是过去时 said，宾语从句要用相应的过去时态，at that time 提示 was。', 3, 45),
+      '主句是过去时 said，宾语从句要用相应的过去时态，at that time 提示 was。', 3, 50),
     q('eng8b-p9-q2', 'eng8b-p9', 'judge', 'In the sentence "She says she will come tomorrow.", the object clause "she will come" is correct.',
       ['对', '错'], 0,
-      '主句为一般现在时 says 时，宾语从句按需要可用将来时。', 3, 40),
+      '主句为一般现在时 says 时，宾语从句按需要可用将来时。', 3, 45),
 
     // ── eng8b-p10 被动语态 ──
     q('eng8b-p10-q1', 'eng8b-p10', 'single', 'The classroom ______ every day.',
       ['cleans', 'is cleaned', 'cleaned', 'is cleaning'], 1,
-      '教室是被打扫，主语与动词是被动关系；一般现在时被动语态为 am/is/are + 过去分词。', 2, 40),
+      '教室是被打扫，主语与动词是被动关系；一般现在时被动语态为 am/is/are + 过去分词。', 2, 45),
     q('eng8b-p10-q2', 'eng8b-p10', 'fill', '用括号内动词的适当形式填空：The bridge ______ (build) in 1998.',
       [], 'was built', 'in 1998 提示一般过去时，桥是被建造，用 was + 过去分词。', 3, 45),
 
     // ── eng8b-p11 含情态动词的被动语态 ──
     q('eng8b-p11-q1', 'eng8b-p11', 'single', 'The homework must ______ before Friday.',
       ['finish', 'be finished', 'finished', 'be finishing'], 1,
-      '情态动词的被动语态结构为 情态动词 + be + 过去分词。', 3, 45),
+      '情态动词的被动语态结构为 情态动词 + be + 过去分词。', 3, 50),
     q('eng8b-p11-q2', 'eng8b-p11', 'single', 'The trees should be ______ twice a week.',
       ['water', 'watered', 'watering', 'waters'], 1,
-      'should be + 过去分词，water 的过去分词是 watered。', 3, 45),
+      'should be + 过去分词，water 的过去分词是 watered。', 3, 50),
 
     // ── eng8b-p12 过去完成时的构成与用法 ──
     q('eng8b-p12-q1', 'eng8b-p12', 'single', 'When I arrived at the cinema, the film ______ already ______.',
       ['has; begun', 'had; begun', 'have; begun', 'was; beginning'], 1,
       '电影开始发生在“我到达”之前，即“过去的过去”，用过去完成时 had + 过去分词。', 3, 50),
     q('eng8b-p12-q2', 'eng8b-p12', 'fill', '用括号内动词的适当形式填空：By the time he got home, his mother ______ (cook) dinner.',
-      [], 'had cooked', 'by the time 引导的从句用过去时，主句动作更早，用过去完成时。', 3, 50),
+      [], 'had cooked', 'by the time 引导的从句用过去时，主句动作更早，用过去完成时。', 3, 45),
 
     // ── eng8b-p13 过去完成时与一般过去时的先后关系 ──
     q('eng8b-p13-q1', 'eng8b-p13', 'single', 'She ______ her homework before her mother ______ home.',
@@ -328,7 +328,7 @@
       '先完成的动作用过去完成时，后发生的用一般过去时。', 3, 50),
     q('eng8b-p13-q2', 'eng8b-p13', 'judge', '过去完成时表示的动作发生在过去某一时间或某一动作之前，即“过去的过去”。',
       ['对', '错'], 0,
-      '这是过去完成时的基本定义，常用 before / by the time 等标记先后顺序。', 2, 35),
+      '这是过去完成时的基本定义，常用 before / by the time 等标记先后顺序。', 2, 40),
 
     // ── eng8b-p14 阅读理解：推理判断与词义猜测 ──
     q('eng8b-p14-q1', 'eng8b-p14', 'single', '阅读短文并推断：Lucy looked out of the window and sighed. "It\'s raining again," she said. "We can\'t have the sports meeting today." How did Lucy feel?',
@@ -336,23 +336,23 @@
       'sighed 与“又下雨、不能开运动会”说明她因计划落空而失望。', 3, 50),
     q('eng8b-p14-q2', 'eng8b-p14', 'single', '根据上下文猜测词义：A vegetarian is a person who does not eat any meat. What does "vegetarian" mean?',
       ['a person who eats only meat', 'a person who does not eat meat', 'a person who cooks meat', 'a person who sells meat'], 1,
-      '由定语从句 “who does not eat any meat” 可直接判断词义。', 2, 40),
+      '由定语从句 “who does not eat any meat” 可直接判断词义。', 2, 45),
 
     // ── eng8b-p15 书面表达：连接词与篇章连贯 ──
     q('eng8b-p15-q1', 'eng8b-p15', 'single', 'Which is the most suitable beginning for a letter to a pen friend?',
       ['Dear Tom,', 'Hello everyone,', 'My name Tom.', 'Thank you for your letter, Tom,'], 0,
-      '书信的标准称呼是 Dear + 名字 + 逗号。', 2, 35),
+      '书信的标准称呼是 Dear + 名字 + 逗号。', 2, 45),
     q('eng8b-p15-q2', 'eng8b-p15', 'single', 'I like my hometown. ______, the air there is fresh and the people are friendly.',
       ['For example', 'However', 'In my opinion', 'At last'], 0,
-      '后句是前句的具体例证，用 For example 使篇章连贯。', 3, 45),
+      '后句是前句的具体例证，用 For example 使篇章连贯。', 3, 50),
 
     // ── eng8b-p16 听力：数字计算与信息转述 ──
     q('eng8b-p16-q1', 'eng8b-p16', 'single', '你听到：Our flight takes off at 7:30 p.m. and we should arrive at the airport two hours earlier. When should we get to the airport?',
       ['5:30 p.m.', '7:30 p.m.', '9:30 p.m.', '6:30 a.m.'], 0,
-      '7:30 提前两小时 = 5:30 p.m.。', 3, 45),
+      '7:30 提前两小时 = 5:30 p.m.。', 3, 50),
     q('eng8b-p16-q2', 'eng8b-p16', 'single', '你听到：I have three brothers and one sister. How many sisters does the speaker have?',
       ['One', 'Two', 'Three', 'Four'], 0,
-      '听力原文直接给出 one sister。', 1, 25),
+      '听力原文直接给出 one sister。', 1, 35),
   ];
 
         const lessons = {

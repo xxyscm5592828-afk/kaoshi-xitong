@@ -62,6 +62,21 @@ const Mastery = {
     };
   },
 
+  // 摸底设定：不做增量更新，直接按实测设定初始掌握度（替代 default() 的 50 分「未知」）
+  // 对且快（用时≤一半预期）=80 / 对=75 / 错=25；错<30 → priority() 剔出刷题池走回炉重学路径（有意设计）
+  applyPlacement(correct, fast, now) {
+    const score = correct ? (fast ? 80 : 75) : 25;
+    return {
+      score,
+      lastReviewAt: now,
+      reviewCount: 0,
+      correctStreak: correct ? 1 : 0,
+      fastStreak: correct && fast ? 1 : 0,
+      wrongStreak: correct ? 0 : 1,
+      interval: 1,
+    };
+  },
+
   // 指数遗忘：半衰期 = 2 × 1.8^reviewCount 天；复习越多忘得越慢
   halfLife(m) { return 2 * Math.pow(1.8, m.reviewCount || 0); },
 

@@ -1,4 +1,4 @@
-// 学长「阿K」单元测试（node --test）
+// 爸爸助手单元测试（node --test）
 // 规则来源：开发文档 §8.3 六律 §9.2 人设 §9.6 红线；设计文档 §2 六轮上限 §6 对话不落库 §7 上下文组装
 // 说明：本文件不联网、不依赖 DOM。fetch 以参数形式注入沙箱。
 const { test } = require('node:test');
@@ -9,7 +9,7 @@ const path = require('node:path');
 const mockLS = { _d: {}, getItem(k) { return this._d[k] ?? null; }, setItem(k, v) { this._d[k] = String(v); }, removeItem(k) { delete this._d[k]; } };
 
 let lastBody = null;
-let fetchContent = '学长说：先看这条边。'; // 默认非 JSON，供答疑/追问测试；生成类测试覆写为 JSON
+let fetchContent = '爸爸说：先看这条边。'; // 默认非 JSON，供答疑测试；生成类测试覆写为 JSON
 function loadAll() {
   // report.js 是 weekReport/fullProfile 拼上下文所需（weekStats/subjectSummary + Wrongbook.stubborn）
   const srcs = ['storage.js', 'mastery.js', 'wrongbook.js', 'report.js', 'ai.js', 'assistant.js']
@@ -36,7 +36,7 @@ const SEED = {
     answer: 0, explanation: '令 x=0 得 y=1，截距为正。', difficulty: 2, expectedTime: 40, groupId: 'g1', groupRole: 'basic',
   }],
   lessons: {},
-  settings: { aiKey: 'k', assistantName: '阿K' },
+  settings: { aiKey: 'k', assistantName: '爸爸' },
 };
 
 function fresh(settings) {
@@ -50,7 +50,7 @@ const Q = SEED.questions[0];
 test('人设与红线：SYSTEM_PROMPT 含六律、不评价能力、字数上限', () => {
   fresh();
   const p = Assistant.SYSTEM_PROMPT;
-  assert.match(p, /阿K/);
+  assert.match(p, /爸爸/);
   assert.match(p, /先说人话/);
   assert.match(p, /类比/);
   assert.match(p, /最小数字/);
@@ -61,7 +61,7 @@ test('人设与红线：SYSTEM_PROMPT 含六律、不评价能力、字数上限
   assert.match(p, /250 字/);
 });
 
-test('name()：默认「阿K」，设置可覆写，空白回落默认', () => {
+test('name()：默认「爸爸」，设置可覆写，空白回落默认', () => {
   fresh({ assistantName: '' });
   assert.equal(Assistant.name(), Assistant.DEFAULT_NAME);
   fresh({ assistantName: '  大熊  ' });
@@ -156,31 +156,18 @@ test('askWrong：hintFirst 缺省时 system 不含提示规则（向后兼容）
   assert.doesNotMatch(lastBody.messages[0].content, /思路提示模式/);
 });
 
-test('socraticGuide：第一问带本题事实 + 他的回答 + 引导规则，system 写死不给答案红线', async () => {
+test('askWrong：本地有微课时注入证据块（核心/类比/坑），无微课则不注入', async () => {
   fresh();
-  const res = await Assistant.socraticGuide(1, REC, Q, '考图象过哪几个象限');
-  assert.equal(res.ok, true);
-  assert.equal(lastBody.messages.length, 2);
-  const sys = lastBody.messages[0];
-  assert.equal(sys.role, 'system');
-  assert.match(sys.content, /追问式讲解规则/);
-  assert.match(sys.content, /绝不直接给答案/);
-  const user = lastBody.messages[1];
-  assert.match(user.content, /【他做错的题】/);
-  assert.match(user.content, /第一问「考什么」/);
-  assert.match(user.content, /【他的回答】考图象过哪几个象限/);
-});
+  Store.lessons = { kp1: [{ version: 1, oneLiner: '核心一句话', analogy: '乐高跷跷板', pitfalls: ['坑A', '坑B'] }] };
+  await Assistant.askWrong(REC, Q, [{ role: 'user', content: '为什么？' }]);
+  const ctx = lastBody.messages[1].content;
+  assert.match(ctx, /【本考点的本地微课·核心】核心一句话/);
+  assert.match(ctx, /乐高跷跷板/);
+  assert.match(ctx, /坑A；坑B/);
 
-test('socraticGuide：第二问只指岔口不给路线；无 Key 返回 noKey', async () => {
   fresh();
-  const res = await Assistant.socraticGuide(2, REC, Q, '先画个草图');
-  assert.equal(res.ok, true);
-  assert.match(lastBody.messages[1].content, /第二问「下一步」/);
-  assert.match(lastBody.messages[1].content, /岔口/);
-  fresh({ aiKey: '' });
-  const no = await Assistant.socraticGuide(1, REC, Q, '不知道');
-  assert.equal(no.ok, false);
-  assert.equal(no.error, 'noKey');
+  await Assistant.askWrong(REC, Q, [{ role: 'user', content: '为什么？' }]);
+  assert.doesNotMatch(lastBody.messages[1].content, /本地微课/);
 });
 
 test('常量与无 DOM 约束：MAX_ROUNDS=6，模块在无 document 环境下可加载可调用', () => {
@@ -449,4 +436,50 @@ test('monthReport：OK 返回评语+档案；解析失败 → parse；无 Key �
   assert.equal((await Assistant.monthReport(Date.now())).error, 'parse');
   fresh({ aiKey: '' });
   assert.equal((await Assistant.monthReport(Date.now())).error, 'noKey');
+});
+
+// ================= B1 变式难度校准：模型难度被钳制在 1~5 且与原题相差 ≤1 =================
+test('variantPrompt：带难度约束行（1~5、与原题相差 ≤1）', () => {
+  fresh();
+  const p = Assistant.variantPrompt(SEED.questions[0], Store.kpIndex().kp1);
+  assert.match(p, /难度取 1~5 的整数/);
+  assert.match(p, /相差不超过 1/);
+  assert.match(p, /原题难度 2/);
+});
+
+test('_parseVariantObj：难度校准——±1 内取用、越界/非数字回落原题', () => {
+  fresh();
+  const orig = { type: 'single', difficulty: 2 };
+  const mk = d => Assistant._parseVariantObj({ stem: 'x', explanation: 'e', options: ['a', 'b', 'c', 'd'], answer: 1, difficulty: d }, orig);
+  assert.equal(mk(2).question.difficulty, 2, '同难度保留');
+  assert.equal(mk(3).question.difficulty, 3, '+1 保留');
+  assert.equal(mk(1).question.difficulty, 1, '-1 保留');
+  assert.equal(mk(5).question.difficulty, 2, '超 ±1 回落原题难度');
+  assert.equal(mk(0).question.difficulty, 2, '低于 1 回落原题');
+  assert.equal(mk('x').question.difficulty, 2, '非数字回落原题');
+  assert.equal(mk(undefined).question.difficulty, 2, '缺省回落原题');
+  // 原题难度本身不合法时以 2 为基准
+  const bad = Assistant._parseVariantObj({ stem: 'x', explanation: 'e', options: ['a', 'b', 'c', 'd'], answer: 1, difficulty: 4 }, { type: 'single', difficulty: 9 });
+  assert.equal(bad.question.difficulty, 2, '基准非法回落 2，模型 4 超 ±1 也回落 2');
+});
+
+// ================= C2 答疑降级兜底：AI 不可用时本地证据拼回答 =================
+test('localAnswer：有微课+解析时拼出本地兜底回答', () => {
+  fresh();
+  Store.lessons = { kp1: [{ version: 1, oneLiner: '核心一句话', analogy: '乐高跷跷板', pitfalls: ['坑A'] }] };
+  const ans = Assistant.localAnswer(REC, Q);
+  assert.match(ans, /核心一句话/);
+  assert.match(ans, /乐高跷跷板/);
+  assert.match(ans, /坑A/);
+  assert.match(ans, /【这道题的解析】/);
+  assert.match(ans, /一次函数图象/);
+});
+
+test('localAnswer：无微课但解析仍在；两者都无返回空串；自由提问返回空串', () => {
+  fresh();
+  assert.match(Assistant.localAnswer(REC, Q), /【这道题的解析】/, '无微课靠教材解析兜底');
+  fresh();
+  const bare = { ...Q, explanation: '' };
+  assert.equal(Assistant.localAnswer(REC, bare), '', '微课与解析都无 → 空串');
+  assert.equal(Assistant.localAnswer(null, null), '', '自由提问（无 rec/q）→ 空串');
 });

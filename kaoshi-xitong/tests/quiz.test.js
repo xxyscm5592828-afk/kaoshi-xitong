@@ -132,7 +132,7 @@ test('submitStage 突破题快对：combo+1、mastery+15、dayStats 记账', () 
   assert.equal(st.maxCombo, 1);
 });
 
-test('submitStage 答错：入悬赏榜、wrongStreak+1、combo 归零', () => {
+test('submitStage 答错：入错题榜、wrongStreak+1、combo 归零', () => {
   fresh();
   const s = Quiz.planSession(T0);
   let stage = s.stages[0];
@@ -174,6 +174,21 @@ test('连错 2 题：下一道突破题自动降难度（difficulty ≤ 2）', (
   const question = Quiz.questionFor(s, T0);
   assert.ok(question);
   assert.ok(question.difficulty <= 2, `难度 ${question.difficulty} 应 ≤ 2`);
+});
+
+test('连错 2 题：交错题同样自动降难度（整组降难度，difficulty ≤ 2）', () => {
+  fresh();
+  // 只留 k3 可选（k1/k2 已掌握出池）；k3 含难度 4 的 qd 与难度 2 的 qe
+  Store.mastery = {
+    k1: { score: 92, lastReviewAt: T0, reviewCount: 6, correctStreak: 3, fastStreak: 2, wrongStreak: 0, interval: 8 },
+    k2: { score: 92, lastReviewAt: T0, reviewCount: 6, correctStreak: 3, fastStreak: 2, wrongStreak: 0, interval: 8 },
+  };
+  const s = Quiz.planSession(T0);
+  s.wrongStreak = 2;
+  const q = Quiz.pickInterleave(s, T0);
+  assert.ok(q);
+  assert.ok(q.difficulty <= 2, `交错题难度 ${q.difficulty} 应 ≤ 2`);
+  assert.equal(q.id, 'qe', '应跳过难度 4 的 qd，只出难度 2 的 qe');
 });
 
 test('必对收尾：从有效掌握度 ≥80 的知识点选题', () => {
@@ -418,4 +433,84 @@ test('estFocusMinutes：按专项练题量口径（本点最多 4 题 + 同科�
     questions: many,
   });
   assert.equal(Quiz.estFocusMinutes('k4'), 6, '8 题的点仍按「本点 4 题 + 补足 2 题」= 6 分钟（6×60s）');
+});
+
+// ================= 学到哪儿（顺序前缀闸门）：没学到的一律不出 =================
+// 现有 SEED 的 kp 是平铺单层（parentId:null, level:4），无法表达「册→章→节→叶」，
+// 故另造带层级的 fixture；同科 L4 叶在数组中按 册→章→节 顺序排列
+function treeSEED() {
+  return {
+    seedVersion: 9,
+    subjects: [{ id: 'math', name: '数学' }],
+    knowledgePoints: [
+      { id: 'b1', subjectId: 'math', parentId: null, name: '八上', order: 1, level: 1 },
+      { id: 'b1-c1', subjectId: 'math', parentId: 'b1', name: '第1章', order: 1, level: 2 },
+      { id: 'b1-c1-s1', subjectId: 'math', parentId: 'b1-c1', name: '1.1', order: 1, level: 3 },
+      { id: 'b1-c1-s2', subjectId: 'math', parentId: 'b1-c1', name: '1.2', order: 2, level: 3 },
+      { id: 'b1-c2', subjectId: 'math', parentId: 'b1', name: '第2章', order: 2, level: 2 },
+      { id: 'b1-c2-s1', subjectId: 'math', parentId: 'b1-c2', name: '2.1', order: 1, level: 3 },
+      { id: 'k1', subjectId: 'math', parentId: 'b1-c1-s1', name: 'K1', order: 1, level: 4, weight: 5, prerequisites: [] },
+      { id: 'k2', subjectId: 'math', parentId: 'b1-c1-s1', name: 'K2', order: 2, level: 4, weight: 3, prerequisites: [] },
+      { id: 'k3', subjectId: 'math', parentId: 'b1-c1-s2', name: 'K3', order: 1, level: 4, weight: 3, prerequisites: [] },
+      { id: 'k4', subjectId: 'math', parentId: 'b1-c2-s1', name: 'K4', order: 1, level: 4, weight: 9, prerequisites: [] },
+    ],
+    questions: [
+      q('qk1', 'k1', 0, 2, 40),
+      q('qk2', 'k2', 0, 2, 40),
+      q('qk3', 'k3', 0, 2, 40),
+      q('qk4', 'k4', 0, 2, 40),
+    ],
+    lessons: {}, settings: {},
+  };
+}
+
+function initTree(scope) {
+  mockLS._d = {};
+  Store.init(treeSEED());
+  if (scope) Store.unitScope = { math: scope };
+}
+
+test('学到哪儿·顺序前缀：登记到某节 → 只算该节及之前的叶点为已学', () => {
+  initTree({ bookId: 'b1', chapterId: 'b1-c1', sectionId: 'b1-c1-s1' });
+  assert.deepEqual([...Quiz.learnedKpIds()].sort(), ['k1', 'k2'], '登记到 1.1 节：1.2 及之后的 k3/k4 不算已学');
+});
+
+test('学到哪儿·顺序前缀：登记到某章 → 该章及之前的叶点都算已学', () => {
+  initTree({ bookId: 'b1', chapterId: 'b1-c1' });
+  assert.deepEqual([...Quiz.learnedKpIds()].sort(), ['k1', 'k2', 'k3']);
+});
+
+test('学到哪儿·顺序前缀：登记到某册 → 该册全部叶点算已学', () => {
+  initTree({ bookId: 'b1' });
+  assert.deepEqual([...Quiz.learnedKpIds()].sort(), ['k1', 'k2', 'k3', 'k4']);
+});
+
+test('学到哪儿：未登记 → learnedKpIds 返回 null（保持缺省不限，不过滤）', () => {
+  initTree(null);
+  assert.equal(Quiz.learnedKpIds(), null);
+});
+
+test('出题硬闸门：登记到 1.1 节后，突破题只从已学点出（不超纲）', () => {
+  initTree({ bookId: 'b1', chapterId: 'b1-c1', sectionId: 'b1-c1-s1' });
+  const s = Quiz.planSession(T0);
+  const picked = Quiz.pickBreakthrough(s, T0);
+  assert.ok(picked);
+  // k4 权重最高（9），若闸门失效会被优先抽中——断言它绝不出
+  assert.ok(['k1', 'k2'].includes(picked.knowledgePointId), `突破题不该超出已学范围，实出 ${picked.knowledgePointId}`);
+});
+
+test('出题硬闸门：登记到 1.1 节后，交错题也只从已学点出', () => {
+  initTree({ bookId: 'b1', chapterId: 'b1-c1', sectionId: 'b1-c1-s1' });
+  const s = Quiz.planSession(T0);
+  const picked = Quiz.pickInterleave(s, T0);
+  assert.ok(picked);
+  assert.ok(['k1', 'k2'].includes(picked.knowledgePointId), `交错题不该超出已学范围，实出 ${picked.knowledgePointId}`);
+});
+
+test('出题硬闸门：未登记 → 不设限，权重最高的 k4 照样入池', () => {
+  initTree(null);
+  const s = Quiz.planSession(T0);
+  const picked = Quiz.pickBreakthrough(s, T0);
+  assert.ok(picked);
+  assert.equal(picked.knowledgePointId, 'k4', '未登记时从整科出题，权重最高的 k4 应被选中');
 });

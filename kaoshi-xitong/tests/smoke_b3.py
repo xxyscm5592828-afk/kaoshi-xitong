@@ -29,7 +29,7 @@ with sync_playwright() as p:
     page.goto(BASE)
     page.wait_for_selector("#start-session")
 
-    # 先不设 Key：造一条「待处理」悬赏走 D0 补流程（无 Key → 解析页有「问学长」）
+    # 先不设 Key：造一条「待处理」悬赏走 D0 补流程（无 Key → 解析页有「问爸爸」）
     page.evaluate("""() => {
       const q = Store.questions[0];
       const kp = Store.kpIndex()[q.knowledgePointId];
@@ -40,7 +40,7 @@ with sync_playwright() as p:
     page.wait_for_selector("[data-process]")
     page.click("[data-process]")
 
-    # D0 流程：选错因 → 无 Key → 看解析 → 问学长
+    # D0 流程：选错因 → 无 Key → 看解析 → 问爸爸
     page.click(".error-type-btn")
     page.wait_for_selector("#d0-ask")
     page.click("#d0-ask")

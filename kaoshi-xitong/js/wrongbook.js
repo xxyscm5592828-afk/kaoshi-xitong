@@ -120,22 +120,33 @@ const Wrongbook = {
     return rec;
   },
 
-  // 变式题选择：同知识点同题型，优先同题组 variant 角色，其次任意不同题
+  // 变式题选择（换壳分层）：同知识点同题型，按「真换壳 → 同层换壳 → 降层保底 → 任意题型」递进
+  // 分层目的：孩子已错过一次，变式不加难度（≤ 原题难度，取最接近原题的一层），
+  // 避免「拐个弯就不会」被直接击穿——先在同层/更低层验证方法，而非跳级
   // allowAnyType：放宽到同知识点任意题型（仅在无 AI 可现场出题时兜底）——否则大量
   // 只出一道题的考点会永久卡在「变式待测」，D7 变式永远出不了题、闭环无法销号
   variantQuestionFor(record, allowAnyType) {
     const qIdx = Store.questionIndex();
     const original = qIdx[record.questionId];
     if (!original) return null;
-    const pool = Store.questions.filter(q =>
+    const d = q => q.difficulty || 3;
+    const same = Store.questions.filter(q =>
       q.knowledgePointId === record.knowledgePointId &&
       q.id !== original.id &&
       q.type === original.type);
-    const inGroup = pool.find(q => q.groupId && q.groupId === original.groupId && q.groupRole === 'variant');
-    if (inGroup || pool[0]) return inGroup || pool[0];
+    // 1) 真换壳：同题组、variant 角色
+    const inGroup = same.find(q => q.groupId && q.groupId === original.groupId && q.groupRole === 'variant');
+    if (inGroup) return inGroup;
+    // 2) 换壳分层：不高于原题难度，取最接近原题的一层（同层优先，其次最贴近的较低层）
+    const notHigher = same.filter(q => d(q) <= d(original));
+    if (notHigher.length) return notHigher.slice().sort((a, b) => d(b) - d(a))[0];
+    if (same.length) return same.slice().sort((a, b) => d(a) - d(b))[0];
+    // 3) 兜底：任意题型，取最低难度，最小跳跃
     if (!allowAnyType) return null;
-    return Store.questions.find(q =>
-      q.knowledgePointId === record.knowledgePointId && q.id !== original.id) || null;
+    const any = Store.questions.filter(q =>
+      q.knowledgePointId === record.knowledgePointId && q.id !== original.id);
+    if (!any.length) return null;
+    return any.slice().sort((a, b) => d(a) - d(b))[0];
   },
 
   // 升级阶梯：0 正常再来一轮 / 1 触发知识点溯源 / 2 顽固清单回炉重学

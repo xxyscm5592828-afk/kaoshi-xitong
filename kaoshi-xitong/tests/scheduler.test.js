@@ -149,7 +149,7 @@ test('教学日历：teachingChapters 命中在教章（±1 周缓冲）', () =>
   assert.deepEqual(Scheduler.teachingChapters('math', 12), ['第二章']);
 });
 
-test('教学日历：在教章科目优先入选且理由带周数', () => {
+test('教学日历：在教章科目优先入选', () => {
   seed(
     [{ id: 'math', name: '数学', default: true }, { id: 'geo', name: '地理', exam: true }],
     [{ id: 'c11', subjectId: 'math', level: 2, name: '第11章 三角形', order: 1 },
@@ -162,8 +162,6 @@ test('教学日历：在教章科目优先入选且理由带周数', () => {
   const blocks = Scheduler.plan(now, 0);
   const math = blocks.find(b => b.subjectId === 'math');
   assert.ok(math, '在教章的数学应入选计划');
-  assert.ok(math.reasons.some(r => r.includes('第 1 周在教') && r.includes('第11章')),
-    `理由应写明第几周在教哪一章: ${JSON.stringify(math.reasons)}`);
 });
 
 // ================= 阶段 3：考试模式 / 赛季窗口 / 大考校准 =================
@@ -315,7 +313,7 @@ test('重置：Store.reset 清空全部 tutor.* 键（含阶段3键），非本�
   for (let i = 0; i < mockLS.length; i++) left.push(mockLS.key(i));
   assert.deepEqual(left.filter(k => k.startsWith('tutor.')).sort(),
     ['tutor.attempts', 'tutor.dayStats', 'tutor.knowledgePoints', 'tutor.lessonState', 'tutor.lessons',
-     'tutor.mastery', 'tutor.questions', 'tutor.seedVersion', 'tutor.settings', 'tutor.solutionCache', 'tutor.subjects', 'tutor.wrongbook'],
+     'tutor.mastery', 'tutor.placement', 'tutor.questions', 'tutor.seedVersion', 'tutor.settings', 'tutor.solutionCache', 'tutor.subjects', 'tutor.wrongbook'],
     '重置后不应残留 activeSubjectId/examScores/facts/planProgress/seasons');
   assert.equal(mockLS.getItem('other.app'), 'keep', '非本应用键不应被删');
   assert.equal(Store.activeSubjectId, '');

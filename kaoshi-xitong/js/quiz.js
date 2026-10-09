@@ -52,20 +52,26 @@ const Quiz = {
     return def ? def.id : '';
   },
 
-  // 单元范围（§需求2）：当前科目选了册/单元/节时，返回其下全部 L4 叶 id 集合；未选（不限）返回 null
-  // 粒度由细到粗：节 > 单元 > 册；悬赏重做/变式/专项练不适用
-  unitKpIds() {
-    const scope = Store.unitScope[this.subjectId()];
+  // 已学范围（「学到哪儿」顺序前缀）：当前科目从最早册按教学顺序学到登记节点（节>章>册）为止，
+  // 之前的 L4 叶都算已学（知识点数组内同科按 册→章→节 顺序排列）；未登记返回 null（不过滤，保持缺省不限）
+  learnedKpIds() {
+    const sid = this.subjectId();
+    const scope = Store.unitScope[sid];
     const rootId = scope && (scope.sectionId || scope.chapterId || scope.bookId);
     if (!rootId) return null;
     const kpIndex = Store.kpIndex();
     if (!kpIndex[rootId]) return null;
     const ids = new Set();
+    let started = false;
     for (const kp of Store.knowledgePoints) {
-      if (kp.level !== 4) continue;
+      if (kp.subjectId !== sid || kp.level !== 4) continue;
+      let under = false;
       for (let cur = kp; cur; cur = kpIndex[cur.parentId]) {
-        if (cur.id === rootId) { ids.add(kp.id); break; }
+        if (cur.id === rootId) { under = true; break; }
       }
+      if (under) started = true;
+      else if (started) break; // 已越过登记节点子树：学到这儿为止
+      ids.add(kp.id);
     }
     return ids;
   },
@@ -169,8 +175,8 @@ const Quiz = {
     const cap = session.wrongStreak >= 2 ? 2 : 99;
     const mastery = Store.mastery;
     const subjectQs = Store.questions.filter(q => q.subjectId === sid);
-    // 专项练（stage.kpId 锁定）由学习页指定单点，不受单元范围约束
-    const scopeIds = stage && stage.kpId ? null : this.unitKpIds();
+    // 专项练（stage.kpId 锁定）由学习页指定单点，不受已学范围约束
+    const scopeIds = stage && stage.kpId ? null : this.learnedKpIds();
     if (stage && stage.kpId) {
       const pool = subjectQs.filter(q =>
         q.knowledgePointId === stage.kpId && q.difficulty <= cap && !session.usedQuestionIds.includes(q.id));
@@ -211,9 +217,10 @@ const Quiz = {
   // 上一题刚练过的知识点降权（交错 = 同科内换点，激活记忆提取）
   pickInterleave(session, now) {
     const sid = this.subjectId();
+    const cap = session.wrongStreak >= 2 ? 2 : 99; // 连错 2 题：整组降难度（含交错题）
     const mastery = Store.mastery;
     const kpIndex = Store.kpIndex();
-    const scopeIds = this.unitKpIds();
+    const scopeIds = this.learnedKpIds();
     const cands = [];
     for (const kp of Store.knowledgePoints) {
       if (kp.subjectId !== sid || kp.level !== 4) continue;
@@ -225,7 +232,7 @@ const Quiz = {
       const diag = Mastery.diagnose(kp, mastery, kpIndex);
       if (Mastery.needsRelearn(diag)) continue;
       const pool = Store.questions.filter(q =>
-        q.knowledgePointId === kp.id && !session.usedQuestionIds.includes(q.id));
+        q.knowledgePointId === kp.id && q.difficulty <= cap && !session.usedQuestionIds.includes(q.id));
       if (pool.length === 0) continue;
       cands.push({ kp, p });
     }
@@ -236,7 +243,7 @@ const Quiz = {
     const top = cands.slice(0, 3).filter(c => c.kp.id !== last);
     const pick = (top.length > 0 ? top : cands.slice(0, 3))[Math.floor(Math.random() * Math.min(3, top.length > 0 ? top.length : cands.length))];
     const pool = Store.questions.filter(q =>
-      q.knowledgePointId === pick.kp.id && !session.usedQuestionIds.includes(q.id));
+      q.knowledgePointId === pick.kp.id && q.difficulty <= cap && !session.usedQuestionIds.includes(q.id));
     return this._leastTried(pool);
   },
 
@@ -252,7 +259,7 @@ const Quiz = {
     const sid = this.subjectId();
     const mastery = Store.mastery;
     const subjectQs = Store.questions.filter(q => q.subjectId === sid);
-    const scopeIds = this.unitKpIds();
+    const scopeIds = this.learnedKpIds();
     const safeKpIds = new Set();
     for (const kp of Store.knowledgePoints) {
       if (kp.subjectId !== sid) continue;

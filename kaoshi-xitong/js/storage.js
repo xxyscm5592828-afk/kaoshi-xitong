@@ -13,10 +13,14 @@ const Store = {
 
   _write(key, val) {
     localStorage.setItem(STORE_PREFIX + key, JSON.stringify(val));
+    if (typeof Sync !== 'undefined' && !Sync._busy) Sync.autoPush(); // 云同步：有变更即防抖上传
   },
 
   // 初始化 / 数据结构变更时重建（seedVersion 不一致即重置）
   init(seed) {
+    // 迁移：旧默认助手名「阿K」/「学长」→「爸爸」（不重置学习数据）
+    const cur = this._read('settings', null);
+    if (cur && (cur.assistantName === '阿K' || cur.assistantName === '学长')) this._write('settings', { ...cur, assistantName: '爸爸' });
     if (this._read('seedVersion', 0) === (seed.seedVersion || 0)) return;
     this._write('subjects', seed.subjects);
     this._write('knowledgePoints', seed.knowledgePoints);
@@ -28,6 +32,7 @@ const Store = {
     this._write('lessonState', {});
     this._write('dayStats', {});
     this._write('solutionCache', {});
+    this._write('placement', { done: {}, active: null });
     const s = seed.settings || {};
     this._write('settings', s);
     this._write('seedVersion', seed.seedVersion || 0);
@@ -60,7 +65,7 @@ const Store = {
   set solutionCache(v) { this._write('solutionCache', v); },
   get settings() { return this._read('settings', {}); },
   get planProgress() { return this._read('planProgress', {}); },
-  // 练习单元范围：{ [subjectId]: { bookId, chapterId } }，缺省即不限（§需求2）
+  // 学到哪儿：{ [subjectId]: { bookId, chapterId, sectionId } }，顺序前缀语义（学到该节点为止，之前的都算已学），缺省即不限（§需求2）
   get unitScope() { return this._read('unitScope', {}); },
   // 进行中题组：刷新页面后能接着练（ISSUE-006），跨天自动作废
   get session() { return this._read('session', null); },
@@ -72,7 +77,11 @@ const Store = {
   get seasons() { return this._read('seasons', {}); },
   get parentChallenge() { return this._read('parentChallenge', []); },
   get examScores() { return this._read('examScores', {}); },
+  // 成绩汇报：每次考试/测验一条记录 { id, date: 'YYYY-MM-DD', scores: {subjectId: 分数}, classRank, gradeRank, createdAt }
+  get gradeReports() { return this._read('gradeReports', []); },
   get monthly() { return this._read('monthly', []); },
+  // 入学摸底：done 为 { [subjectId]: true }；active 为进行中状态（刷新可续）
+  get placement() { return this._read('placement', { done: {}, active: null }); },
 
   set mastery(v) { this._write('mastery', v); },
   set activeSubjectId(v) { this._write('activeSubjectId', v); },
@@ -90,7 +99,9 @@ const Store = {
   set seasons(v) { this._write('seasons', v); },
   set parentChallenge(v) { this._write('parentChallenge', v); },
   set examScores(v) { this._write('examScores', v); },
+  set gradeReports(v) { this._write('gradeReports', v); },
   set monthly(v) { this._write('monthly', v); },
+  set placement(v) { this._write('placement', v); },
 
   // 知识点索引：{ id → 节点 }
   kpIndex() {
@@ -239,7 +250,7 @@ const Store = {
     return { ok: true, question: merged };
   },
 
-  // 删除题目：同步清理错题本里引用它的记录（悬赏榜不能挂着不存在的题）
+  // 删除题目：同步清理错题本里引用它的记录（错题榜不能挂着不存在的题）
   deleteQuestion(id) {
     const list = this.questions;
     if (!list.some(q => q.id === id)) return { ok: false, error: '题目不存在' };
@@ -256,7 +267,7 @@ const Store = {
 
   dayStat(dateKey) {
     const all = this.dayStats;
-    return all[dateKey] || { answered: 0, correct: 0, maxCombo: 0, litCount: 0, closures: 0 };
+    return all[dateKey] || { answered: 0, correct: 0, maxCombo: 0, litCount: 0, closures: 0, arithRounds: 0, arithCorrect: 0, arithTotal: 0 };
   },
 
   bumpDayStat(dateKey, patch) {

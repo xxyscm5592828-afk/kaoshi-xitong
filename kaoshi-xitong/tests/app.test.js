@@ -1,5 +1,5 @@
-// 答错链路 + 追问式讲解单元测试（node --test，零真实 DOM）
-// 覆盖：afterUnderstood 决策三态；有 Key 追问式收尾仍推微课（C 方案）；无 Key 降级文字解析；AI 中途失败降级；跟进练习二选一
+// 答错链路单元测试（node --test，零真实 DOM）
+// 覆盖：afterUnderstood 决策三态；答错后统一走题级讲解卡（不再进追问式）；跟进练习二选一
 // 说明：app.js 依赖 DOM，本文件用最小 FakeEl stub 驱动，fetch 以参数注入沙箱。
 const { test } = require('node:test');
 const assert = require('node:assert');
@@ -61,14 +61,16 @@ let fetchImpl = () => Promise.resolve({
 
 function loadAll() {
   const srcs = ['storage.js', 'ai.js', 'assistant.js', 'data.js', 'scheduler.js', 'triggers.js',
-    'mastery.js', 'quiz.js', 'wrongbook.js', 'lesson.js', 'report.js', 'games.js', 'facts.js', 'ui.js', 'app.js']
+    'mastery.js', 'placement.js', 'quiz.js', 'wrongbook.js', 'speech.js', 'lesson.js', 'report.js', 'games.js', 'facts.js', 'ui.js', 'celebrate.js', 'app.js']
     .map(f => fs.readFileSync(path.join(__dirname, '..', 'js', f), 'utf8')).join('\n');
   const fetchStub = (url, opt) => fetchImpl(url, opt);
+  // window 桩：让 Speech 走「支持朗读」分支，验证接线点确实产出朗读按钮
+  const winStub = { speechSynthesis: { speak() {}, cancel() {} }, SpeechSynthesisUtterance: function (t) { this.text = t; }, scrollTo() {}, print() {} };
   // app.js 顶层只有 DOMContentLoaded 注册，stub 掉即可；init() 不在测试里调用
   // body 为 null：Ui.popup 在无 DOM 环境下直接跳过（弹窗不进单测）
   const docStub = { addEventListener() {}, querySelectorAll() { return []; }, getElementById() { return null; }, createElement() { return new FakeEl(); }, body: null, documentElement: null };
-  return new Function('localStorage', 'fetch', 'document',
-    srcs + '; return { Store, AI, Assistant, Quiz, Wrongbook, Lesson, Report, App, Games, Facts, Ui, Triggers, COPY };')(mockLS, fetchStub, docStub);
+  return new Function('localStorage', 'fetch', 'document', 'window',
+    srcs + '; return { Store, AI, Assistant, Quiz, Wrongbook, Lesson, Report, App, Games, Facts, Ui, Triggers, COPY };')(mockLS, fetchStub, docStub, winStub);
 }
 const { Store, AI, Assistant, Quiz, Wrongbook, Lesson, App, Triggers } = loadAll();
 
@@ -82,7 +84,7 @@ const SEED = {
     answer: 0, explanation: '令 x=0 得 y=1，截距为正。', difficulty: 2, expectedTime: 40,
   }],
   lessons: { kp1: [{ version: 1, readTime: 60 }] },
-  settings: { aiKey: 'k', assistantName: '阿K' },
+  settings: { aiKey: 'k', assistantName: '爸爸' },
 };
 const Q = SEED.questions[0];
 // 填空题夹具：用于断言「作答/答案对照」的揭晓时机（方案 B 延迟揭晓）
@@ -97,19 +99,20 @@ function makeRec() {
 }
 
 let nextCalled = false;
-let onDoneCalled = false;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 function fresh(settings, seedOverrides) {
   mockLS._d = {};
   // lessons 等字段在 Store 里是只读 getter，需经 seed 写入（直接赋值会被静默忽略）
   Store.init({ ...SEED, ...(seedOverrides || {}), settings: settings || SEED.settings });
+  // 默认模拟已摸底的老用户：主页渲染测试不受摸底引导分支影响（摸底逻辑由 placement.test.js 单测）
+  const defSid = (Store.subjects.find(s => s.default) || Store.subjects[0] || {}).id;
+  Store.placement = { done: defSid ? { [defSid]: true } : {}, active: null };
   Store.wrongbook = [makeRec()];
   App.stage = { type: 'breakthrough' };
   App.session = null;
   App.dailyPlan = null;
   nextCalled = false;
-  onDoneCalled = false;
   App.nextStage = () => { nextCalled = true; };
   fetchImpl = () => Promise.resolve({
     ok: true, status: 200,
@@ -117,26 +120,12 @@ function fresh(settings, seedOverrides) {
   });
 }
 
-// 驱动 renderFeedback 答错链路：点指定错因 →（有 Key）进入追问式讲解
+// 驱动 renderFeedback 答错链路：点指定错因 → 直接进题级讲解卡（无论有无 Key）
 function clickErrorType(el, type) {
   const zone = el.querySelector('#result-zone');
   App.renderFeedback(el, Q, 2, 10, { correct: false, isSubjective: false, wrongRecordId: 'wr1', degradedNext: false });
   zone._errs.find(b => b.dataset.type === type).click('click');
   return zone;
-}
-
-// 走完追问式前两问 + 第三问重做（选正确项）
-async function runSocraticToRedo(el) {
-  el._qs['#so-input'].value = '考图象过哪几个象限';
-  el._qs['#so-send'].click('click');
-  await sleep(20);
-  el._qs['#so-input'].value = '先看截距正负';
-  el._qs['#so-send'].click('click');
-  await sleep(20);
-  const body = el._qs['#so-body'];
-  body._opts[0].click('click'); // 选正确答案（answer=0）
-  body._qs['#so-redo-submit'].click('click');
-  return body;
 }
 
 test('afterUnderstood：概念错+有微课 → 推微课推荐页，不下一题，已标记重做中', () => {
@@ -173,52 +162,6 @@ test('afterUnderstood：非概念错（有微课）→ 也推微课，不直接�
   assert.equal(nextCalled, false);
 });
 
-test('答错+有Key+概念错因：追问式收尾后仍推微课（核心回归）', async () => {
-  fresh();
-  const el = new FakeEl('root');
-  clickErrorType(el, '概念');
-  assert.ok(el.innerHTML.includes('追问式讲解'), '有 Key 应进入追问式');
-  const body = await runSocraticToRedo(el);
-  body._qs['#so-redo-result']._qs['#so-understood'].click('click');
-  assert.ok(el.innerHTML.includes('take-lesson'), '收尾应走 afterUnderstood 推微课');
-  assert.equal(nextCalled, false);
-  assert.equal(Wrongbook.get('wr1').status, '重做中');
-});
-
-test('答错+有Key+非概念错因：追问式收尾后也推微课，不直接下一题', async () => {
-  fresh();
-  const el = new FakeEl('root');
-  clickErrorType(el, '审题');
-  assert.ok(el.innerHTML.includes('追问式讲解'));
-  const body = await runSocraticToRedo(el);
-  body._qs['#so-redo-result']._qs['#so-understood'].click('click');
-  assert.ok(el.innerHTML.includes('take-lesson'), '放宽后有微课就推微课');
-  assert.equal(nextCalled, false);
-});
-
-test('苏格拉底重做：未作答拦住（内联提示、无 alert、不进判分），选中后放行', async () => {
-  fresh();
-  let alertCalled = false;
-  global.alert = () => { alertCalled = true; };
-  const el = new FakeEl('root');
-  clickErrorType(el, '概念');
-  el._qs['#so-input'].value = '考图象过哪几个象限';
-  el._qs['#so-send'].click('click');
-  await sleep(20);
-  el._qs['#so-input'].value = '先看截距正负';
-  el._qs['#so-send'].click('click');
-  await sleep(20);
-  const body = el._qs['#so-body'];
-  assert.equal(body._qs['#so-redo-submit'].disabled, true, '未作答时提交按钮应禁用');
-  body._qs['#so-redo-submit'].click('click');
-  assert.equal(body._qs['#so-redo-hint'].textContent, '请先作答再提交', '未作答提交应给内联提示');
-  assert.equal(alertCalled, false, '不应再弹出 alert');
-  assert.equal(body._qs['#so-redo-result'], undefined, '未作答不应进入判分（#so-redo-result 未被触碰）');
-  body._opts[0].click('click');
-  assert.equal(body._qs['#so-redo-submit'].disabled, false, '选中选项后提交应可用');
-  global.alert = () => {};
-});
-
 // ================= 跟进练习二选一（§需求3）=================
 test('跟进练习：选 AI 原创题 → 生成成功入库并插成本组下一关', async () => {
   fresh(undefined, { lessons: {} });
@@ -248,29 +191,35 @@ test('跟进练习：出题失败 → 降级页不阻塞，可继续做题', asy
   assert.equal(nextCalled, true);
 });
 
-test('答错+无Key：降级文字解析，不进追问式', () => {
-  fresh({ aiKey: '' });
-  const el = new FakeEl('root');
-  const zone = clickErrorType(el, '概念');
-  assert.equal(AI.hasKey(), false);
-  assert.ok(zone.innerHTML.includes('错因已记下'), '降级为原文字解析');
-  assert.ok(zone.innerHTML.includes('解析'));
-  assert.ok(!el.innerHTML.includes('追问式讲解'));
+test('答错：无论有无 Key 都走题级讲解卡，不再进追问式', () => {
+  for (const settings of [SEED.settings, { aiKey: '' }]) {
+    fresh(settings);
+    const el = new FakeEl('root');
+    const zone = clickErrorType(el, '概念');
+    assert.ok(zone.innerHTML.includes('错因已记下'), '错因已记下并进讲解卡');
+    assert.ok(zone.innerHTML.includes('解析'), '讲解卡含解析');
+    assert.ok(zone.innerHTML.includes('这道题考什么'), '讲解卡含考点');
+    assert.ok(!el.innerHTML.includes('追问式讲解'), '无论有无 Key 都不应再进追问式');
+  }
 });
 
-test('追问式 AI 中途失败：降级保住内容+文字解析+问学长兜底', async () => {
+test('答错：讲解卡直接带微课入口，点击直达微课并标记已看懂', () => {
   fresh();
   const el = new FakeEl('root');
-  App.renderSocratic(el, Q, Wrongbook.get('wr1'), () => { onDoneCalled = true; });
-  el._qs['#so-input'].value = '考图象';
-  fetchImpl = () => Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({}) });
-  el._qs['#so-send'].click('click');
-  await sleep(20);
-  assert.ok(el.innerHTML.includes('解析'), '降级页保留文字解析');
-  assert.ok(el.innerHTML.includes('问阿K'), '降级页保留问学长兜底');
-  assert.ok(el.innerHTML.includes('开小差'), '中文降级话术');
-  el._qs['#so-understood'].click('click');
-  assert.equal(onDoneCalled, true, '降级后仍可正常收尾');
+  const zone = clickErrorType(el, '概念');
+  assert.ok(zone.innerHTML.includes('lesson-entry'), '有微课时讲解卡应含「上微课」入口');
+
+  const calls = [];
+  const origRender = Lesson.render;
+  Lesson.render = (kpId, root, onPassed) => calls.push({ kpId, root, onPassed });
+  try {
+    zone.querySelector('#lesson-entry').click('click');
+    assert.equal(calls.length, 1, '点击入口应直接进入微课');
+    assert.equal(calls[0].kpId, 'kp1', '微课应对应本题知识点');
+    assert.equal(Wrongbook.get('wr1').understood, true, '直达微课也应标记已看懂');
+  } finally {
+    Lesson.render = origRender;
+  }
 });
 
 // ================= 主观题强制费曼复述（阶段 1 §13.3）=================
@@ -700,18 +649,6 @@ test('D0 补处理兜底页（无Key）：也给题级讲解卡，不是只有�
   assert.ok(el.innerHTML.includes('章节定位'), '讲解卡应含课本章节定位');
 });
 
-test('追问式 AI 中途失败降级页：也给题级讲解卡，不是只有一句话解析', async () => {
-  fresh();
-  const el = new FakeEl('root');
-  App.renderSocratic(el, Q, Wrongbook.get('wr1'), () => {});
-  el._qs['#so-input'].value = '考图象';
-  fetchImpl = () => Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({}) });
-  el._qs['#so-send'].click('click');
-  await sleep(20);
-  assert.ok(el.innerHTML.includes('explain-card'), '降级页应复用题级讲解卡');
-  assert.ok(el.innerHTML.includes('章节定位'), '降级页应含课本章节定位');
-});
-
 test('textbookRef：拼出「人教版 · 册次 · 章 › 节 › 知识点」，不含页码', () => {
   fresh(SEED.settings, {
     subjects: [{ id: 'math', name: '数学', default: true, textbook: '人教版' }],
@@ -751,28 +688,27 @@ const realRenderPractice = App.renderPractice;
 
 function freshHome(seedOverrides) {
   mockLS._d = {};
-  Store.init({ ...SEED, ...(seedOverrides || {}), settings: { aiKey: 'k', assistantName: '阿K' } });
+  Store.init({ ...SEED, ...(seedOverrides || {}), settings: { aiKey: 'k', assistantName: '爸爸' } });
+  const defSid = (Store.subjects.find(s => s.default) || Store.subjects[0] || {}).id;
+  Store.placement = { done: defSid ? { [defSid]: true } : {}, active: null };
   App.renderPractice = realRenderPractice;
   App.session = null;
   App.dailyPlan = null;
   App.planSalt = 0;
   App.planDone = [];
-  App.scopeOpen = false;
 }
 
-test('主页重排：首个元素是状态带，计划宫格在自选区之前，自选默认折叠不渲染选科卡', () => {
+test('主页重排：首个元素是状态带，选科卡常显于状态带之后', () => {
   freshHome();
   const el = new FakeEl('root');
   App.renderPractice(el);
   const html = el.innerHTML;
   const iStrip = html.indexOf('class="status-strip');
-  const iPlan = html.indexOf('plan-grid');
-  const iScope = html.indexOf('scope-toggle');
+  const iPick = html.indexOf('pick-subject');
   assert.ok(iStrip !== -1, '应渲染状态带');
   assert.ok(html.trimStart().startsWith('<div class="status-strip'), '状态带应是首个元素');
-  assert.ok(iPlan !== -1 && iPlan > iStrip, '计划宫格应在状态带之后');
-  assert.ok(iScope !== -1 && iScope > iPlan, '自选折叠入口应在计划宫格之后');
-  assert.ok(!html.includes('pick-subject'), '折叠态不渲染选科卡内容');
+  assert.ok(iPick !== -1 && iPick > iStrip, '选科卡应常显于状态带之后');
+  assert.ok(html.includes('id="start-manual"'), '选科卡应含开练按钮');
   assert.ok(html.includes('id="start-session"'), '首块仍是 #start-session');
 });
 
@@ -786,4 +722,25 @@ test('主页重排：考试模式已开时状态带变冲刺条并含退出按�
   assert.ok(strip.includes('level-hot'), '冲刺条应为 level-hot');
   assert.ok(strip.includes('冲刺中'), '应显示冲刺文案');
   assert.ok(strip.includes('id="exam-mode-off"'), '应含退出考试模式按钮');
+});
+
+// ================= 朗读接线（P2）：卡片按钮 + 朗读文本边界 =================
+test('朗读接线：题级讲解卡带朗读按钮；朗读文本只念考点/解析/章节定位，不念作答对照', () => {
+  fresh({ aiKey: '' });
+  const el = new FakeEl('root');
+  App.renderFeedback(el, QF, '(0,0)', 10, { correct: false, isSubjective: false, wrongRecordId: 'wr1', degradedNext: false });
+  const zone = el.querySelector('#result-zone');
+  zone._errs.find(b => b.dataset.type === '审题').click('click');
+  assert.ok(zone.innerHTML.includes('data-speak="explain"'), '讲解卡应带朗读按钮');
+  assert.ok(zone.innerHTML.includes('你的作答'), '卡片上仍展示作答对照，供学生自己看');
+  const text = App.explainSpeechText(QF);
+  assert.ok(text.includes('这道题考什么') && text.includes('解析'), '朗读文本应念考点与解析');
+  assert.ok(!text.includes('你的作答') && !text.includes('(0,1)'), '朗读文本不应念作答对照');
+});
+
+test('朗读接线：问爸爸面板带朗读按钮（scope=ask）', () => {
+  fresh();
+  const zone = new FakeEl('ask');
+  App.renderAskPanel(zone, null, null, () => {});
+  assert.ok(zone.innerHTML.includes('data-speak="ask"'), '问爸爸面板应带朗读按钮');
 });

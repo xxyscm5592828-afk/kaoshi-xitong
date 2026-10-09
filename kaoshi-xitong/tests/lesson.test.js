@@ -7,10 +7,13 @@ const path = require('node:path');
 
 const mockLS = { _d: {}, getItem(k) { return this._d[k] ?? null; }, setItem(k, v) { this._d[k] = String(v); }, removeItem(k) { delete this._d[k]; } };
 
+// 语音桩：注入 window 后 Speech 视为「支持朗读」，与浏览器环境一致
+const speechWin = { speechSynthesis: { speak() {}, cancel() {} }, SpeechSynthesisUtterance: function (t) { this.text = t; } };
+
 function loadAll() {
-  const srcs = ['storage.js', 'lesson.js', 'illustrations.js']
+  const srcs = ['storage.js', 'speech.js', 'lesson.js', 'illustrations.js']
     .map(f => fs.readFileSync(path.join(__dirname, '..', 'js', f), 'utf8')).join('\n');
-  return new Function('localStorage', srcs + '; return { Store, Lesson, Illustrations };')(mockLS);
+  return new Function('localStorage', 'window', srcs + '; return { Store, Lesson, Illustrations };')(mockLS, speechWin);
 }
 const { Store, Lesson, Illustrations } = loadAll();
 
@@ -99,4 +102,12 @@ test('render：有示意图的知识点输出 lesson-illo 插槽；无图的不�
   Lesson.render('m8b-p18', el2, () => {});
   assert.ok(el2.innerHTML.includes('lesson-illo'), '应输出示意图容器');
   assert.ok(el2.innerHTML.includes('<svg'), '示意图应为 SVG');
+});
+
+test('render：微课卡带整卡朗读按钮（scope=lesson）', () => {
+  mockLS._d = {}; Store.init(SEED);
+  const el = { innerHTML: '', querySelector() { return { addEventListener() {} }; } };
+  Lesson.render('kp1', el, () => {});
+  assert.ok(el.innerHTML.includes('data-speak="lesson"'), '微课卡应带朗读按钮');
+  assert.ok(el.innerHTML.includes('🔊 朗读'), '按钮文案应为「朗读」');
 });

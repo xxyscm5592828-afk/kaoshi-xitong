@@ -66,17 +66,20 @@ test('weekStats：汇总近 7 天且不含窗口外数据', () => {
   assert.equal(w.accuracy, Math.round(100 * 11 / 16));
 });
 
-test('weekStats：独立归因次数 + 高效学习秒数（S/A 级，窗口外不计）', () => {
+test('weekStats：独立归因次数（读错题记录自选错因）+ 高效学习秒数（S/A 级，窗口外不计）', () => {
   seed();
   Store.attempts = [
-    { timestamp: NOW - DAY, correct: false, errorType: '概念' },
-    { timestamp: NOW - DAY, correct: false, errorType: null },
     { timestamp: NOW, correct: true, rating: 'S', actualTime: 30 },
     { timestamp: NOW, correct: true, rating: 'B', actualTime: 300 },
-    { timestamp: NOW - 8 * DAY, correct: false, errorType: '计算' }, // 窗口外
+    { timestamp: NOW - 8 * DAY, correct: true, rating: 'S', actualTime: 30 }, // 窗口外
+  ];
+  Store.wrongbook = [
+    { id: 'r1', firstWrongAt: NOW - DAY, errorType: '概念' },
+    { id: 'r2', firstWrongAt: NOW - DAY, errorType: null },
+    { id: 'r3', firstWrongAt: NOW - 8 * DAY, errorType: '计算' }, // 窗口外
   ];
   const w = Report.weekStats(NOW);
-  assert.equal(w.attributions, 1, '只有窗口内非空错因计入');
+  assert.equal(w.attributions, 1, '只统计窗口内已自选错因的错题记录');
   assert.equal(w.effSeconds, 30, '只统计 S/A 级作答时长');
 });
 
@@ -89,6 +92,29 @@ test('weekCardHTML：空周提示开张 / 有数据渲染汇总与柱状', () =>
   assert.ok(html.includes('答题 5'));
   assert.ok(html.includes('week-bar'));
   assert.ok(html.includes('09/15'));
+});
+
+// ================= 周报叙事：三问三答（这周推进 / 哪类卡 / 下周主攻） =================
+test('weekNarrativeHTML：空周提示先开张', () => {
+  seed();
+  assert.ok(Report.weekNarrativeHTML(NOW).includes('还没开张'));
+});
+
+test('weekNarrativeHTML：三段齐备（推进 / 卡点含错因 / 下周主攻）', () => {
+  seed();
+  Store.mastery = MASTERY;
+  Store.bumpDayStat(Store.todayKey(NOW), { answered: 6, correct: 5, litCount: 1, closures: 1 });
+  Store.wrongbook = [
+    { id: 'r1', knowledgePointId: 'k2', subjectId: 'math', status: '顽固', reappearCount: 3, firstWrongAt: NOW, errorType: '计算' },
+    { id: 'r2', knowledgePointId: 'k2', subjectId: 'math', status: '重做中', reappearCount: 3, firstWrongAt: NOW, errorType: '计算' },
+  ];
+  const html = Report.weekNarrativeHTML(NOW);
+  assert.ok(html.includes('本周小结'));
+  assert.ok(html.includes('① 这周推进了') && html.includes('新点亮'), '① 报推进与新点亮');
+  assert.ok(html.includes('K1'), '① 点名已点亮的 K1（90 分 + fastStreak≥2）');
+  assert.ok(html.includes('② 哪一类还在卡') && html.includes('反复卡住'), '② 卡点');
+  assert.ok(html.includes('计算'), '② 自选错因聚类');
+  assert.ok(html.includes('③ 下周主攻') && html.includes('K3'), '③ 主攻未掌握里优先级最高的 K3');
 });
 
 test('subjectSummary：各科加权平均并按分数排序', () => {
@@ -134,10 +160,10 @@ test('printWeeklyHTML：独立学习证据 + 高效分钟数 + 无搜题声明�
   seed();
   Store.mastery = MASTERY;
   Store.attempts = [
-    { timestamp: NOW - DAY, correct: false, errorType: '概念' },
     { timestamp: NOW, correct: true, rating: 'S', actualTime: 30 },
     { timestamp: NOW, correct: true, rating: 'S', actualTime: 60 },
   ];
+  Store.wrongbook = [{ id: 'r1', firstWrongAt: NOW - DAY, errorType: '概念' }];
   const html = Report.printWeeklyHTML(NOW);
   assert.ok(html.includes('独立归因 1 次'));
   assert.ok(html.includes('高效学习约 2 分钟'), '90 秒 S/A 级 → 约 2 分钟');
@@ -314,4 +340,44 @@ test('nextTarget：久未复习的点标 rusted（提示先保养）', () => {
   assert.equal(t.kp.id, 'k1');
   assert.equal(t.rusted, true);
   assert.equal(t.gap, 85, '衰减后已接近 0 分');
+});
+
+// ================= 学情记忆审计（DeepTutor A4）：错因清单 / 销号记录 / 掌握度来源 =================
+test('memoryAudit：错因按自选归因聚合 + 销号记录 + 掌握度来源/薄弱 Top5', () => {
+  seed();
+  Store.mastery = { ...MASTERY };
+  Store.wrongbook = [
+    { id: 'w1', questionId: 'x1', knowledgePointId: 'k1', errorType: '概念', status: '已销号', closedAt: NOW },
+    { id: 'w2', questionId: 'x2', knowledgePointId: 'k2', errorType: '概念', status: '待处理' },
+    { id: 'w3', questionId: 'x3', knowledgePointId: 'k3', errorType: '计算', status: '重做中' },
+    { id: 'w4', questionId: 'x4', knowledgePointId: 'k1', errorType: null, status: '待处理' },
+  ];
+  Store.attempts = [{ id: 'a1' }, { id: 'a2' }];
+  Store.lessons = { k1: [{ version: 1 }] };
+  const a = Report.memoryAudit();
+  assert.equal(a.causes.length, 2, '只有选过错因的计入');
+  const concept = a.causes.find(c => c.key === '概念');
+  assert.equal(concept.count, 2);
+  assert.deepEqual(concept.kps.slice().sort(), ['K1', 'K2'], '错因涉及的知识点（去重）');
+  assert.equal(a.closedCount, 1, '销号计数');
+  assert.equal(a.recentClosures[0].name, 'K1', '最近销号记录含知识点名');
+  assert.equal(a.masteryCount, 3);
+  assert.equal(a.litCount, 1, 'k1=90 ≥85 算已点亮');
+  assert.equal(a.weak[0].name, 'K3', '薄弱 Top1 是最低分 k3');
+  assert.equal(a.weak.length, 2, '低于 85 的只有 k2/k3');
+  assert.equal(a.attemptsCount, 2);
+  assert.equal(a.lessonCount, 1);
+});
+
+test('memoryAudit：空数据各字段安全（无错因/无销号/无掌握度）', () => {
+  seed();
+  const a = Report.memoryAudit();
+  assert.equal(a.causes.length, 0);
+  assert.equal(a.closedCount, 0);
+  assert.equal(a.recentClosures.length, 0);
+  assert.equal(a.masteryCount, 0);
+  assert.equal(a.litCount, 0);
+  assert.equal(a.weak.length, 0);
+  assert.equal(a.attemptsCount, 0);
+  assert.equal(a.lessonCount, 0);
 });

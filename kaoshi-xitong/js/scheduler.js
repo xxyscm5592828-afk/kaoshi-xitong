@@ -191,7 +191,7 @@ const Scheduler = {
       const def = subjects.find(s => s.default) || subjects[0];
       const examSub = subjects.find(s => s.exam && s.id !== def.id);
       const blocks = [this._block(def.id, '突破摸底', ['先摸个底，看看哪里薄'])];
-      if (examSub) blocks.push(this._block(examSub.id, '突破摸底', ['会考科，先混个脸熟']));
+      if (examSub) blocks.push(this._block(examSub.id, '突破摸底', ['换个科目，先混个脸熟']));
       return blocks;
     }
 
@@ -216,10 +216,7 @@ const Scheduler = {
       const reasons = [];
       if (x.bounty > 0) reasons.push(`${x.bounty} 道悬赏到期`);
       if (x.rusty > 0) reasons.push(`${x.rusty} 个点快生锈`);
-      if (x.teaching.length > 0) {
-        reasons.push(`第 ${week} 周在教：${x.teaching.join('、')}`);
-      }
-      if (reasons.length === 0) reasons.push(x.subject.exam ? '会考科，日常推进' : '按计划推进');
+      if (reasons.length === 0) reasons.push('按计划推进');
       return this._block(x.subject.id, mode, reasons);
     });
   },

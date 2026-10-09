@@ -1,4 +1,4 @@
-// 学长「阿K」主动触发器：何时说话 + 防骚扰红线（零 DOM，纯 L1 本地文案）
+// 爸爸助手主动触发器：何时说话 + 防骚扰红线（零 DOM，纯 L1 本地文案）
 // 规则来源：开发文档 §9.1 三层消息（本地触发器 0 成本）§9.3 触发器地图 §9.4 每日体验流
 // 依赖：Store / Scheduler（压力量化）。文案全部内联，不依赖 COPY，便于独立测试。
 const Triggers = {
@@ -26,19 +26,18 @@ const Triggers = {
   skipped(id, now) { return !!this.state(now).skipped[id]; },
 
   // ===== 开工问候（每天打开，界面文案，不占主动消息额度）=====
-  // 昨日表现 + 今日任务 + 考试倒计时（§9.3「每天打开」）
+  // 昨日表现 + 今日任务（§9.3「每天打开」）
   greeting(now, planList, doneList) {
     const DAY = 86400000;
     const y = Store.dayStat(Store.todayKey(now - DAY));
     const plan = planList || Scheduler.plan(now, 0);
     const done = doneList || [];
-    const days = Scheduler.examDaysLeft(now);
     const parts = [this._hello(now)];
     if (y.answered) {
       const acc = Math.round(100 * y.correct / y.answered);
       parts.push(`昨天 ${y.answered} 题对 ${y.correct} 题（${acc}%），手感在线。`);
     } else {
-      parts.push('昨天没上线？阿K当没看见，今天补上就成。');
+      parts.push('昨天没上线？爸爸当没看见，今天补上就成。');
     }
     const pending = plan.filter(b => !done.includes(b.subjectId));
     if (pending.length) {
@@ -48,7 +47,6 @@ const Triggers = {
     } else if (plan.length) {
       parts.push('今天的计划已经清完，想加练就自己挑一科。');
     }
-    if (days > 0 && days <= 14) parts.push(`会考还有 ${days} 天，冲刺信号拉满。`);
     return parts.join('');
   },
   _hello(now) {
@@ -68,16 +66,10 @@ const Triggers = {
     if (!n) return null;
     return { id: 'rusty', text: `有 ${n} 个知识点开始生锈了——趁它没锈透，5 分钟保养一下？` };
   },
-  // 考前 14/7/3 天提醒
-  examReminder(now) {
-    const days = Scheduler.examDaysLeft(now);
-    if (![14, 7, 3].includes(days)) return null;
-    return { id: 'exam', text: `会考只剩 ${days} 天了，冲刺模式该开了——今天主攻会考科。` };
-  },
   // 周日晚：周报入口（AI 评语在阶段 2 第 5 项）
   weekly(now) {
     if (new Date(now).getDay() !== 0) return null;
-    return { id: 'weekly', text: '周报已出炉，去「技能树」查账——看看这周点亮几盏灯。' };
+    return { id: 'weekly', text: '周报已出炉，去「知识树」查账——看看这周点亮几盏灯。' };
   },
   // 超 48h 召回：lastActiveAt 为上次活跃时间戳（由 App 传入，不从「这次打开」读）
   recall(now, lastActiveAt) {
@@ -88,7 +80,7 @@ const Triggers = {
   milestone(now) {
     const y = Store.dayStat(Store.todayKey(now - 86400000));
     if (y.litCount) return { id: 'milestone', text: `昨天点亮了 ${y.litCount} 个知识点，帅啊——今天乘胜追击？` };
-    if (y.closures) return { id: 'milestone', text: `昨天销了 ${y.closures} 个悬赏，漂亮！悬赏榜又在召唤你了。` };
+    if (y.closures) return { id: 'milestone', text: `昨天销了 ${y.closures} 个悬赏，漂亮！错题榜又在召唤你了。` };
     return null;
   },
   // 每日待办提醒：到期悬赏 + 最该攻的点。数据由 App 传入（同 recall 的 recallAt），
@@ -108,13 +100,12 @@ const Triggers = {
   },
 
   // 汇总结算：当前该主动说的全部消息（不占额度不落状态，交给调用方决定渲染哪条）
-  // 优先级：生锈 > 考前 > 召回 > 里程碑 > 周报 > 待办
-  // （前五条是偶发/时点事件，待办是每日常态，排最后兜底，保证偶发消息不被打扰）
+  // 优先级：生锈 > 召回 > 里程碑 > 周报 > 待办
+  // （前四条是偶发/时点事件，待办是每日常态，排最后兜底，保证偶发消息不被打扰）
   proactive(now, opts) {
     const o = opts || {};
     const msgs = [
       this.rusty(now),
-      this.examReminder(now),
       this.recall(now, o.recallAt),
       this.milestone(now),
       this.weekly(now),

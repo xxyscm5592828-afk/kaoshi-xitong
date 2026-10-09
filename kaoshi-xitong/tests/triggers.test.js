@@ -1,4 +1,4 @@
-// 学长「阿K」主动触发器单元测试（node --test）
+// 爸爸助手主动触发器单元测试（node --test）
 // 规则来源：开发文档 §9.3 触发器地图 §9.4 防骚扰红线（每日≤2、22点静默、今天跳过）
 // 说明：不联网、零 DOM；fetch 不需要（触发器不调 AI）。
 const { test } = require('node:test');
@@ -40,7 +40,6 @@ function fresh() { mockLS._d = {}; Store.init(SEED); }
 function rustyRec(now) {
   return { score: 90, lastReviewAt: now - 10 * DAY, reviewCount: 1, correctStreak: 0, fastStreak: 0, wrongStreak: 0, interval: 3 };
 }
-const setExam = d => { Store.settings = { ...Store.settings, examDate: Store.todayKey(T0 + d * DAY) }; };
 
 test('state：同一天保留 sent/skipped，跨日重置', () => {
   fresh();
@@ -120,14 +119,6 @@ test('greeting：昨日没上线提示补上', () => {
   assert.match(Triggers.greeting(T0), /昨天没上线/);
 });
 
-test('greeting：会考≤14 天提示倒计时，更远不提示', () => {
-  fresh();
-  setExam(14);
-  assert.match(Triggers.greeting(T0), /会考还有 14 天/);
-  setExam(30);
-  assert.doesNotMatch(Triggers.greeting(T0), /会考还有/);
-});
-
 test('rusty：有生锈点返回保养消息，无生锈返回 null', () => {
   fresh();
   assert.equal(Triggers.rusty(T0), null);
@@ -135,15 +126,6 @@ test('rusty：有生锈点返回保养消息，无生锈返回 null', () => {
   const r = Triggers.rusty(T0);
   assert.ok(r, '应命中生锈点');
   assert.match(r.text, /生锈/);
-});
-
-test('examReminder：14/7/3 天触发，其余为 null', () => {
-  fresh();
-  setExam(14); assert.match(Triggers.examReminder(T0).text, /只剩 14 天/);
-  setExam(7); assert.match(Triggers.examReminder(T0).text, /只剩 7 天/);
-  setExam(3); assert.match(Triggers.examReminder(T0).text, /只剩 3 天/);
-  setExam(5); assert.equal(Triggers.examReminder(T0), null);
-  setExam(30); assert.equal(Triggers.examReminder(T0), null);
 });
 
 test('weekly：周日触发，非周日为 null', () => {

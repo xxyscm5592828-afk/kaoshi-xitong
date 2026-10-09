@@ -119,8 +119,8 @@ def run():
         check("战报收尾页出现", page.locator("#again-btn").count() > 0)
         check("今日战报卡片渲染", page.locator(".card.battle").count() > 0)
 
-        # ---------- 5. 悬赏榜（D0 后状态） ----------
-        print("\n[5] 悬赏榜（重做中）")
+        # ---------- 5. 错题榜（D0 后状态） ----------
+        print("\n[5] 错题榜（重做中）")
         page.click('.nav-btn[data-view="wrongbook"]')
         page.wait_for_selector(".bounty-list")
         check("悬赏在榜（状态=重做中）", "重做中" in page.locator(".bounty-item").first.inner_text())
@@ -217,8 +217,8 @@ def run():
         next_until_end()
         check("专项练正常收尾（战报页）", page.locator("#again-btn").count() > 0)
 
-        # ---------- 10. 追问式讲解（有 Key：阿K 苏格拉底式三问，mock fetch） ----------
-        print("\n[10] 追问式讲解")
+        # ---------- 10. 答错后统一题级讲解卡（不再进追问式；mock fetch 供逐步解法/跟进练习） ----------
+        print("\n[10] 答错后题级讲解卡")
         page.evaluate("""() => {
             Store.settings = { ...Store.settings, aiKey: 'e2e-key' };
             window.fetch = (url, opt) => Promise.resolve({
@@ -232,38 +232,15 @@ def run():
         page.wait_for_selector(".stem")
         answer_wrong()
         page.locator('.error-type-btn[data-type="概念"]').click()
-        page.wait_for_selector(".socratic-card")
-        check("有 Key：追问式讲解卡出现", page.locator(".socratic-card").count() == 1)
-        check("三问步骤条（考什么→下一步→重做）", page.locator(".sostep").count() == 3)
-        check("题面重现且不亮答案", page.locator(".socratic-card .stem").count() == 1
-              and page.locator(".socratic-card .option").count() == 0)
-        # 第一问：回答 → AI 点拨
-        page.fill("#so-input", "考一次函数图象过哪几个象限")
-        page.click("#so-send")
-        page.wait_for_timeout(400)
-        check("第一问 AI 点拨出现", page.locator(".chat-bubble.from-me").count() == 1
-              and page.locator(".chat-bubble.from-ai").count() >= 3)
-        # 第二问：回答 → 进入重做
-        page.fill("#so-input", "先看截距的正负")
-        page.click("#so-send")
-        page.wait_for_selector("#so-body .option", timeout=5000)
-        check("第三问重做界面（可选题）", page.locator("#so-body .option").count() > 0)
-        # 重做：答对 → 看懂了继续 → 回练习流
-        q = cur()
-        ans = q["answer"]
-        if isinstance(ans, list):
-            for i in ans:
-                page.locator(f'#so-body .option[data-idx="{int(i)}"]').click()
-        elif q["type"] == "fill":
-            page.fill("#so-fill", str(ans))
-        else:
-            page.locator(f'#so-body .option[data-idx="{int(ans)}"]').click()
-        page.click("#so-redo-submit")
-        page.wait_for_selector("#so-understood")
-        check("重做答对 → 收尾按钮出现", page.locator("#so-understood").count() == 1)
-        page.click("#so-understood")
+        page.wait_for_selector(".explain-card")
+        check("错因选定后出现题级讲解卡", page.locator(".explain-card").count() == 1)
+        check("不再进入追问式讲解", page.locator(".socratic-card").count() == 0
+              and page.locator(".sostep").count() == 0)
+        card_text = page.locator(".explain-card").inner_text()
+        check("讲解卡含考点与解析", "这道题考什么" in card_text and "解析" in card_text)
+        page.locator("#understood-btn").click()
         page.wait_for_timeout(300)
-        check("追问式收尾后仍推微课（概念错因）", page.locator("#take-lesson").count() == 1)
+        check("看懂了 → 推微课（概念错因）", page.locator("#take-lesson").count() == 1)
         page.click("#skip-lesson")
         page.wait_for_timeout(300)
         check("跳过微课 → 跟进练习二选一（AI 原创 / 真题风格）",
@@ -323,9 +300,6 @@ def run():
         # 练习流：回炉点 p12 出池，根因点 p6 加权优先出题
         # 注意：#start-session 是「今日计划」首块按钮，会切换科目；用 #start-manual 锁定当前科目（math）
         page.click('.nav-btn[data-view="practice"]')
-        # 自选区默认折叠且懒渲染，#start-manual 展开后才存在；已展开则不再点，避免反而折叠
-        if page.locator("#start-manual").count() == 0:
-            page.click("#scope-toggle")
         page.wait_for_selector("#start-manual")
         page.click("#start-manual")
         page.wait_for_selector(".stem")

@@ -1,7 +1,7 @@
-// 学长「阿K」：人设 + 上下文组装 + prompt 构造（零 DOM；网络统一走 AI.chat）
+// AI 爸爸助手：人设 + 上下文组装 + prompt 构造（零 DOM；网络统一走 AI.chat）
 // 规则来源：开发文档 §8.3 六律 §9.2 人设 §9.6 红线（不评价能力）；设计文档 §6
 const Assistant = {
-  DEFAULT_NAME: '阿K',
+  DEFAULT_NAME: '爸爸',
   MAX_ROUNDS: 6, // 单题追问硬上限（设计文档 §2）
 
   name() {
@@ -12,8 +12,8 @@ const Assistant = {
   // 人设 + 六律 + 硬约束：全部写死在 prompt 里，不指望模型自觉
   get SYSTEM_PROMPT() {
     return [
-      `你是「${this.name()}」，比孩子大两届的学长，不是老师，也不是家长。`,
-      '说话风格：损友学长腔——懂梗、不说教、敢自嘲、永远站在孩子这边。他做错了先接住情绪，再讲题。',
+      `你是「${this.name()}」，也就是孩子的爸爸——不是老师，也不是爱唠叨的严家长。`,
+      '说话风格：可爱爸爸腔——温和耐心、爱用生活里的例子打比方、偶尔自嘲逗他笑，永远站在孩子这边。他做错了先接住情绪，再讲题，绝不凶他。',
       '要生动：多打比方、多举身边的例子，别干巴巴讲道理；可以说得夸张点、带点梗，但绝不能骗他。',
       '',
       '讲题必须守住这六条：',
@@ -49,6 +49,30 @@ const Assistant = {
     return lines.join('\n');
   },
 
+  // A2 本地检索增强：按知识点取本地微课（种子版，见 data-*.js）拼成证据块，随错题答疑一起交给模型（0 额外 API 调用）
+  localLessonEvidence(kpId) {
+    const vs = (Store.lessons || {})[kpId];
+    if (!Array.isArray(vs) || !vs.length) return '';
+    const l = vs[0];
+    const lines = [`【本考点的本地微课·核心】${l.oneLiner}`];
+    if (l.analogy) lines.push(`【微课类比（可沿用或改写）】${l.analogy}`);
+    if (Array.isArray(l.pitfalls) && l.pitfalls.length) lines.push(`【这个考点最常见的坑】${l.pitfalls.join('；')}`);
+    return lines.join('\n');
+  },
+
+  // C2 答疑降级兜底：AI 不可用（无 Key / 额度用尽 / 网络异常）时，用本地证据拼一段像样的回答（0 token、0 计费）
+  // 素材：本地微课证据（核心/类比/坑）+ 教材解析；两者都没有就返回空串（由界面走原降级话术）
+  localAnswer(rec, q) {
+    const kp = q && q.knowledgePointId ? (Store.kpIndex()[q.knowledgePointId] || null) : null;
+    const lines = [];
+    const evidence = rec && rec.knowledgePointId ? this.localLessonEvidence(rec.knowledgePointId) : '';
+    if (evidence) lines.push(evidence);
+    if (q && q.explanation) lines.push(`【这道题的解析】${q.explanation}`);
+    if (!lines.length) return '';
+    const head = q ? `这道题考「${(kp && kp.name) || '这个知识点'}」，先看这段本地讲义：` : '先看这段本地讲义：';
+    return head + '\n' + lines.join('\n');
+  },
+
   // 选项题把下标还原成文字；填空/主观原样返回
   _fmt(q, val) {
     if (val === null || val === undefined || val === '') return '（空着没写）';
@@ -69,25 +93,17 @@ const Assistant = {
       system += '\n\n思路提示模式（只此一轮）：他刚第一次问这道题，先只给一条思路提示——指个方向、给个类比或线索，2~3 句。绝不报答案，不给完整解法，结尾不提问（展开由界面推进）。';
     }
     const messages = [{ role: 'system', content: system }];
-    if (rec && q) messages.push({ role: 'user', content: this.buildWrongContext(rec, q) });
+    if (rec && q) {
+      let ctx = this.buildWrongContext(rec, q);
+      const evidence = this.localLessonEvidence(rec.knowledgePointId);
+      if (evidence) ctx += '\n' + evidence;
+      messages.push({ role: 'user', content: ctx });
+    }
     for (const turn of (history || [])) {
       const content = String((turn && turn.content) || '').trim();
       if (!content) continue;
       messages.push({ role: turn.role === 'assistant' ? 'assistant' : 'user', content });
     }
-    return AI.chat({ messages });
-  },
-
-  // 追问式讲解（设计文档 C 方案）：三问引导「考什么→下一步→重做」
-  // 前两问带孩子自查，阿K 只做苏格拉底式点拨（不报答案、不讲完整解法）；第三问重做由界面本地判分，不走 AI
-  socraticGuide(step, rec, q, studentText) {
-    const guide = step === 1
-      ? '第一问「考什么」：他刚才用自己的话说了对这道题的理解。你来判断方向——对就确认并帮他说得更准；偏了别直接纠正，给一个类比或线索让他自己拐回来。'
-      : '第二问「下一步」：他刚才说了自己的解题打算。你来判断路线——对就确认再补一句关键提醒；偏了只指出第一个走岔的岔口，不给正确路线。';
-    const messages = [
-      { role: 'system', content: this.SYSTEM_PROMPT + '\n\n追问式讲解规则：你在带他自查复盘，不是讲题。绝不直接给答案或完整解法，点到为止，两句话以内，结尾不用提问（流程由界面推进）。' },
-      { role: 'user', content: this.buildWrongContext(rec, q) + '\n\n' + guide + `\n\n【他的回答】${String(studentText || '').trim()}` },
-    ];
     return AI.chat({ messages });
   },
 
@@ -128,8 +144,8 @@ const Assistant = {
   // 生成任务用独立 system：SYSTEM_PROMPT 的「250 字 / 不用标题」会把 JSON 憋坏，故分离
   get GEN_SYSTEM_PROMPT() {
     return [
-      `你是「${this.name()}」，比孩子大两届的学长，不是老师，也不是家长。`,
-      '说话风格：损友学长腔——懂梗、不说教、敢自嘲、永远站在孩子这边。',
+      `你是「${this.name()}」，也就是孩子的爸爸，不是老师，也不是爱唠叨的严家长。`,
+      '说话风格：可爱爸爸腔——温和耐心、爱用生活里的例子打比方、偶尔自嘲逗他笑，永远站在孩子这边。',
       '要生动：多打比方、多举身边的例子，别干巴巴讲道理；可以说得夸张点、带点梗，但绝不能骗他。',
       '讲题必须守六条：',
       '1. 先说人话，再上术语，术语一出来当场用大白话解释。',
@@ -235,6 +251,7 @@ const Assistant = {
         : '- options 恰好 4 个，answer 是正确选项下标（0~3）。')
         : (original.type === 'judge' ? '- answer 只能是 0（对）或 1（错）。' : '- answer 是参考答案字符串。'),
       '- 必须换数字/情境，别和原题几乎一样；知识点和题型不许变。',
+      `- 难度取 1~5 的整数，和原题相差不超过 1（原题难度 ${original.difficulty || 2}）。`,
     ].filter(Boolean).join('\n');
   },
 
@@ -248,7 +265,11 @@ const Assistant = {
     const s = v => (typeof v === 'string' ? v.trim() : '');
     const stem = s(o.stem), explanation = s(o.explanation);
     if (!stem || !explanation) return { ok: false };
-    const q = { type: original.type, stem, explanation, difficulty: original.difficulty || 2, expectedTime: original.expectedTime || 40 };
+    // B1 难度校准：采用模型给的 difficulty，但钳制在 1~5 且与原题相差 ≤1（出题难度=原题±1），越界回落原题难度
+    const origD = Number.isInteger(original.difficulty) && original.difficulty >= 1 && original.difficulty <= 5 ? original.difficulty : 2;
+    const d = Number(o.difficulty);
+    const difficulty = Number.isInteger(d) && d >= 1 && d <= 5 && Math.abs(d - origD) <= 1 ? d : origD;
+    const q = { type: original.type, stem, explanation, difficulty, expectedTime: original.expectedTime || 40 };
     if (original.type === 'single' || original.type === 'multi') {
       const opts = Array.isArray(o.options) ? o.options.map(x => s(x)).filter(Boolean) : [];
       if (opts.length < 2) return { ok: false };
@@ -380,7 +401,7 @@ const Assistant = {
       '- 波动大：归因到可控因素，不回避。',
       '理解档案红线：只记「模式和有效策略」，绝不记「能力判定」（不写「数学差」「不擅长」这类）。每条洞察要能追到具体事实。',
       '严格按这个 JSON 输出，只输出 JSON：',
-      '{ "comment": "一段评语，150 字以内，学长腔，口语化，不用 Markdown",',
+      '{ "comment": "一段评语，150 字以内，爸爸腔，口语化，不用 Markdown",',
       '  "profile": { "academic": ["学术模式"], "behavioral": ["行为模式"], "psychological": ["心理模式"], "milestones": ["里程碑事实"] } }',
     ].join('\n');
   },

@@ -75,9 +75,19 @@ const Lesson = {
           <ul class="pitfalls">${lesson.pitfalls.map(p => `<li>${p}</li>`).join('')}</ul>
         </div>
         <div class="lesson-actions">
+          ${Speech.btnHTML('lesson')}
           <button class="btn" id="lesson-start-check">开始自测（2 题，全对才算学会）</button>
         </div>
       </div>`;
+
+    // 整卡一次读完：核心一句话 → 它解决什么问题 → 类比 → 例题 → 常见的坑（插图与自测不读）
+    Speech.wire(el, 'lesson', () => [
+      `核心一句话。${lesson.oneLiner}`,
+      `它解决什么问题。${lesson.problem}`,
+      `类比。${lesson.analogy}`,
+      `例题。${lesson.example}`,
+      `常见的坑。${(lesson.pitfalls || []).join('；')}`,
+    ].join(' '));
 
     el.querySelector('#lesson-start-check').addEventListener('click', () => {
       this.renderCheck(kpId, el, onPassed);

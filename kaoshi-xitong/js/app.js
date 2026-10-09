@@ -1,4 +1,4 @@
-// 主控 v2：路由 + 关卡化练习流 UI + 错因自选（先归因再解析）+ 微课嵌入 + 悬赏榜 + 设置
+// 主控 v2：路由 + 关卡化练习流 UI + 错因自选（先归因再解析）+ 微课嵌入 + 错题榜 + 设置
 // 规则来源：开发文档 §7 §8 §10 §11（计时器隐身、归因语言、翻译不贴皮）
 const ERROR_TYPES = [
   { key: '概念', label: '概念没吃透', hint: '知识点本身没理解' },
@@ -9,15 +9,31 @@ const ERROR_TYPES = [
 
 // 答疑异常时的中文降级话术（设计文档 §8）：绝不给孩子看空白或英文报错
 const AI_MSG = {
-  noKey: '学长还没上线——去「设置」里填一下 AI Key 就能问他了。',
-  quota: '今天问学长的次数用完了，先去把题重做一遍。',
-  truncated: '学长想太久了，没说完。再点一次试试。',
+  noKey: '爸爸还没上线——去「设置」里填一下 AI Key 就能问他了。',
+  quota: '今天问爸爸的次数用完了，先去把题重做一遍。',
+  truncated: '爸爸想太久了，没说完。再点一次试试。',
   badKey: 'Key 好像不对，去「设置」里检查一下。',
-  rateLimited: '学长正忙，先看上面的解析。',
+  rateLimited: '爸爸正忙，先看上面的解析。',
   timeout: '网有点慢，再点一次试试。',
   network: '网好像断了，先看上面的解析。',
-  http: '学长开小差了，先看上面的解析。',
+  http: '爸爸开小差了，先看上面的解析。',
 };
+
+// 开机欢迎语池：每次启动随机抽一句，温暖 / 激励 / 搞怪 / 搞笑混着来
+const WELCOME_LINES = [
+  '俊成主人！我是你的学习辅助系统',
+  '俊成主人，今天也要元气满满地开挂哦',
+  '欢迎回来，俊成主人！错题们都等着被你收拾呢',
+  '报告主人：学习能量已充满，随时可以出发',
+  '俊成主人，别怕难题——难题见了你才怕',
+  '主人上线！学霸之路，就从这一题开始',
+  '俊成主人，今天偷偷努力，明天惊艳所有人',
+  '俊成主人，脑子越用越灵光，来一题试试',
+  '主人驾到！学一题赚一题，稳住别浪',
+  '俊成主人，卷起来，也记得对自己温柔一点',
+  '俊成主人，今天比昨天厉害一点点就够啦',
+  '主人好！系统已就位，请下达学习命令',
+];
 
 const App = {
   view: 'practice',
@@ -29,9 +45,9 @@ const App = {
   el: null,
   planSalt: 0,      // 「换个组合」的换批盐值
   planDone: [],     // 今日计划里已练完的科目（内存态）
-  scopeOpen: false, // 主页自选科目/单元区折叠态（内存态，刷新即收起）
+  _placementDismissed: false, // 摸底引导「跳过」只收起本次渲染（内存态，刷新再现）
   dailyPlan: null,
-  learnKpId: null,  // 学习页当前知识点（从技能树点进来）
+  learnKpId: null,  // 学习页当前知识点（从知识树点进来）
   _prevActiveAt: 0,     // 上次活跃时间戳（召回触发用）
   proactiveShown: false, // 本次会话是否已发主动消息（触发点在结算页）
 
@@ -49,9 +65,44 @@ const App = {
       if (def) Store.activeSubjectId = def.id;
     }
     document.querySelectorAll('.nav-btn').forEach(btn => {
-      btn.addEventListener('click', () => this.show(btn.dataset.view));
+      btn.addEventListener('click', () => btn.dataset.view === 'assistant' ? this.openDadModal() : this.show(btn.dataset.view));
     });
+    const dadFab = document.getElementById('dad-fab'); // 全局右侧悬浮入口：点一下弹「问爸爸」弹窗（不跳页）
+    if (dadFab) dadFab.addEventListener('click', () => this.openDadModal());
+    if (typeof Sync !== 'undefined') Sync.init(); // 已配置云同步时：启动拉取比对 + 关页兜底
     this.show('practice');
+    this.showWelcome();
+  },
+
+  // 开机欢迎页：每次启动随机一句问候，弹性弹出、约 2.6 秒后自动淡出，点任意处可立即关闭
+  showWelcome() {
+    const KEY = 'tutor.welcomeIdx';
+    let idx = Math.floor(Math.random() * WELCOME_LINES.length);
+    let last = -1;
+    try { last = Number(sessionStorage.getItem(KEY)); } catch (e) {}
+    if (WELCOME_LINES.length > 1 && idx === last) idx = (idx + 1) % WELCOME_LINES.length;
+    try { sessionStorage.setItem(KEY, String(idx)); } catch (e) {}
+
+    const mask = document.createElement('div');
+    mask.className = 'welcome-mask';
+    mask.innerHTML = `
+      <div class="welcome-card">
+        <div class="welcome-glow"></div>
+        <img class="welcome-photo" src="assets/welcome-hero.png" alt="加油">
+        <p class="welcome-line">${WELCOME_LINES[idx]}</p>
+        <p class="welcome-hint">点击任意处进入</p>
+      </div>`;
+    document.body.appendChild(mask);
+
+    let closed = false;
+    const close = () => {
+      if (closed) return;
+      closed = true;
+      mask.classList.add('out');
+      setTimeout(() => mask.remove(), 400);
+    };
+    mask.addEventListener('click', close);
+    setTimeout(close, 2600);
   },
 
   // 今日计划进度（换了批次 / 已练完的科目）按日期存；跨天自动清零（计划本就是按天算的）
@@ -99,14 +150,19 @@ const App = {
       btn.classList.toggle('active', btn.dataset.view === view);
     });
     if (view === 'tools') this._toolDetail = null; // 从导航进工具页一律回目录
+    const dadFab = document.getElementById('dad-fab');
+    if (dadFab) dadFab.classList.toggle('hidden', view === 'assistant'); // 已在该页则收起悬浮框
     window.scrollTo(0, 0);
     if (view === 'practice') this.renderPractice(this.el);
-    else if (view === 'report') { Report.render(this.el); this.renderWeeklyAI(this.el.querySelector('#weekly-ai-slot')); this.renderMonthlyReview(this.el.querySelector('#monthly-review-btn')); }
+    else if (view === 'report') { Report.render(this.el); this.renderMonthlyReview(this.el.querySelector('#monthly-review-btn')); }
+    else if (view === 'brief') this.renderBrief(this.el);
+    else if (view === 'grade') this.renderGradeReport(this.el);
     else if (view === 'learn') this.renderLearn(this.el);
     else if (view === 'wrongbook') this.renderWrongbook(this.el);
     else if (view === 'assistant') this.renderAssistant(this.el);
     else if (view === 'tools') this.renderTools(this.el);
     else if (view === 'settings') this.renderSettings(this.el);
+    else if (view === 'guide') this.renderGuide(this.el);
   },
 
   pick(list) { return list[Math.floor(Math.random() * list.length)]; },
@@ -128,7 +184,7 @@ const App = {
   subjectBar() {
     const cur = this.activeSubject();
     return `<div class="subject-bar">${Store.subjects.map(s => `
-      <button class="subject-chip${cur && s.id === cur.id ? ' active' : ''}" data-subject="${s.id}">${s.name}${s.exam ? '<em>会考</em>' : ''}</button>`).join('')}</div>`;
+      <button class="subject-chip${cur && s.id === cur.id ? ' active' : ''}" data-subject="${s.id}">${s.name}</button>`).join('')}</div>`;
   },
 
   bindSubjectBar(el, rerender) {
@@ -140,7 +196,7 @@ const App = {
     });
   },
 
-  // ================= 单元范围（§需求2）：先选册再选章再选节，默认不限，选了才限制出题 =================
+  // ================= 学到哪儿（§需求2）：先选册再选章再选节，登记当前进度；出题只出「学到这儿为止」的已学知识点 =================
   unitScopeFor(sid) {
     const cur = Store.unitScope[sid] || {};
     return { bookId: cur.bookId || '', chapterId: cur.chapterId || '', sectionId: cur.sectionId || '' };
@@ -152,69 +208,69 @@ const App = {
     Store.unitScope = all;
   },
 
+  // 学到哪儿（下拉菜单）：本 / 单元 / 节三层常驻；上级未选时下级置灰并提示「先选上一级」；空值 = 未登记/整册/整章
   unitBar(sid) {
     const kps = Store.knowledgePoints.filter(k => k.subjectId === sid);
     const books = kps.filter(k => k.level === 1).sort((a, b) => a.order - b.order);
     if (books.length === 0) return '';
     const cur = this.unitScopeFor(sid);
-    const bookChips = `<button class="subject-chip${cur.bookId ? '' : ' active'}" data-unit-book="">全科不限</button>`
-      + books.map(b => `<button class="subject-chip${cur.bookId === b.id ? ' active' : ''}" data-unit-book="${b.id}">${b.name}</button>`).join('');
+    const bookOpts = `<option value=""${cur.bookId ? '' : ' selected'}>未登记</option>`
+      + books.map(b => `<option value="${b.id}"${cur.bookId === b.id ? ' selected' : ''}>${b.name}</option>`).join('');
     const chapters = cur.bookId
       ? kps.filter(k => k.level === 2 && k.parentId === cur.bookId).sort((a, b) => a.order - b.order)
       : [];
-    const chapterChips = chapters.map(c =>
-      `<button class="subject-chip${cur.chapterId === c.id ? ' active' : ''}" data-unit-chapter="${c.id}">${c.name}</button>`).join('');
+    const chapterOpts = cur.bookId
+      ? `<option value=""${cur.chapterId ? '' : ' selected'}>整册</option>`
+        + chapters.map(c => `<option value="${c.id}"${cur.chapterId === c.id ? ' selected' : ''}>${c.name}</option>`).join('')
+      : '<option value="" selected>先选上一级</option>';
     const sections = cur.chapterId
       ? kps.filter(k => k.level === 3 && k.parentId === cur.chapterId).sort((a, b) => a.order - b.order)
       : [];
-    const sectionChips = sections.map(s =>
-      `<button class="subject-chip${cur.sectionId === s.id ? ' active' : ''}" data-unit-section="${s.id}">${s.name}</button>`).join('');
+    const sectionOpts = cur.chapterId
+      ? `<option value=""${cur.sectionId ? '' : ' selected'}>整章</option>`
+        + sections.map(s => `<option value="${s.id}"${cur.sectionId === s.id ? ' selected' : ''}>${s.name}</option>`).join('')
+      : '<option value="" selected>先选上一级</option>';
     const bName = (books.find(b => b.id === cur.bookId) || {}).name || '';
     const cName = (chapters.find(c => c.id === cur.chapterId) || {}).name || '';
     const sName = (sections.find(s => s.id === cur.sectionId) || {}).name || '';
     const note = cur.bookId
-      ? `出题范围：${bName}${cName ? ' · ' + cName : '（整册）'}${sName ? ' · ' + sName : ''}；范围内题不够一组（6 题）时，学长会按真题风格现场补几道（需 AI Key）。`
-      : '默认整科出题；选了册、单元、节，就只出这个范围以内的知识点；范围内题不够一组（6 题）时，学长会按真题风格现场补几道（需 AI Key）。';
+      ? `出题范围：学到「${bName}${cName ? ' · ' + cName : ''}${sName ? ' · ' + sName : ''}」为止，之前的都算学过，没学到的不会出；当前单元题不够一组（6 题）时，爸爸会按真题风格现场补几道（需 AI Key）。`
+      : '还没登记「学到哪儿」：系统会从整科出题，可能出到还没学的知识点。建议选到当前学到的那一节，之前的都算学过，就不会超纲。';
     return `
       <div class="unit-picker">
-        <div class="unit-row"><span class="unit-label">学到哪本</span>${bookChips}</div>
-        ${chapters.length > 0 ? `<div class="unit-row"><span class="unit-label">学到哪单元</span>
-          <button class="subject-chip${cur.chapterId ? '' : ' active'}" data-unit-chapter="">整册</button>${chapterChips}</div>` : ''}
-        ${sections.length > 0 ? `<div class="unit-row"><span class="unit-label">学到哪节</span>
-          <button class="subject-chip${cur.sectionId ? '' : ' active'}" data-unit-section="">整章</button>${sectionChips}</div>` : ''}
+        <div class="unit-row"><span class="unit-label">学到哪本</span><select class="unit-select" data-unit-book>${bookOpts}</select></div>
+        <div class="unit-row"><span class="unit-label">学到哪单元</span><select class="unit-select" data-unit-chapter${cur.bookId ? '' : ' disabled'}>${chapterOpts}</select></div>
+        <div class="unit-row"><span class="unit-label">学到哪节</span><select class="unit-select" data-unit-section${cur.chapterId ? '' : ' disabled'}>${sectionOpts}</select></div>
         <div class="unit-note muted">${note}</div>
       </div>`;
   },
 
   bindUnitBar(el, sid, rerender) {
-    el.querySelectorAll('[data-unit-book]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        this.setUnitScope(sid, btn.dataset.unitBook, '');
-        rerender();
-      });
+    const book = el.querySelector('[data-unit-book]');
+    if (book) book.addEventListener('change', () => {
+      this.setUnitScope(sid, book.value, '');
+      rerender();
     });
-    el.querySelectorAll('[data-unit-chapter]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        this.setUnitScope(sid, this.unitScopeFor(sid).bookId, btn.dataset.unitChapter);
-        rerender();
-      });
+    const chapter = el.querySelector('[data-unit-chapter]');
+    if (chapter) chapter.addEventListener('change', () => {
+      this.setUnitScope(sid, this.unitScopeFor(sid).bookId, chapter.value);
+      rerender();
     });
-    el.querySelectorAll('[data-unit-section]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const cur = this.unitScopeFor(sid);
-        this.setUnitScope(sid, cur.bookId, cur.chapterId, btn.dataset.unitSection);
-        rerender();
-      });
+    const section = el.querySelector('[data-unit-section]');
+    if (section) section.addEventListener('change', () => {
+      const cur = this.unitScopeFor(sid);
+      this.setUnitScope(sid, cur.bookId, cur.chapterId, section.value);
+      rerender();
     });
   },
 
-  // 需求6：选了范围后，范围内题目不够一组（6 题）时，学长按真题风格现场补足（§需求3 生成能力的复用）
+  // 需求6：选了范围后，范围内题目不够一组（6 题）时，爸爸按真题风格现场补足（§需求3 生成能力的复用）
   // 生成结果经 Store.addQuestion 入库并持久化，是一次性的：补过就不再补
   // 同一 L4 的多道题合并成一次调用（一次 AI.chat 只扣 1 次额度），能少花就少花
   // 无 Key / 超额 / 生成失败一律静默跳过（返回已补题数），不阻塞开练
   async ensureScopeQuestions(need, onProgress) {
     if (!AI.hasKey()) return 0;
-    const scopeIds = Quiz.unitKpIds();
+    const scopeIds = Quiz.learnedKpIds();
     if (!scopeIds || scopeIds.size === 0) return 0;
 
     // 范围内现有题数 + 每个 L4 的种子题（genRealBatch 必须以一道现成题为蓝本，沿用其题型/难度）
@@ -259,7 +315,7 @@ const App = {
   },
 
   // ================= 学习页：诊断 → 微课 → 例题精讲 → 学完就练 =================
-  // 辅导主入口（从技能树点进来）：先看清现状，再学（微课/例题），学完就练一组专项
+  // 辅导主入口（从知识树点进来）：先看清现状，再学（微课/例题），学完就练一组专项
   openLearn(kpId) {
     this.learnKpId = kpId;
     this.show('learn');
@@ -290,7 +346,7 @@ const App = {
       <div class="card learn-hero">
         <div class="learn-head">
           <h2>${tier.icon} ${kp.name}</h2>
-          <button class="btn secondary small" id="back-report">← 回技能树</button>
+          <button class="btn secondary small" id="back-report">← 回知识树</button>
         </div>
         <div class="muted">${subj ? subj.name : ''} · ${this.bankKpPath(kp)}</div>
         <div class="exp-bar big"><div class="exp-fill" style="width:${Math.round(eff)}%"></div></div>
@@ -409,9 +465,176 @@ const App = {
     });
   },
 
+  // ================= 入学摸底 =================
+  // 首次使用某科目：探针题校准初始掌握度（默认 50 分「未知」会让诊断/调度第一天全靠猜）
+  renderPlacementIntro(el) {
+    const sid = this.activeSubject() ? this.activeSubject().id : '';
+    const subjName = this.activeSubject() ? this.activeSubject().name : '这一科';
+    const active = Store.placement.active;
+    const resume = active && active.subjectId === sid && active.idx > 0 && active.idx < active.order.length;
+    const { pos, total } = Placement.progress();
+    el.innerHTML = `
+      <div class="card hero">
+        <h2>🧭 ${subjName}·入学摸底（约 6 分钟）</h2>
+        <p class="muted">这不是考试——做几道有代表性的题，让系统知道你哪些已经会、哪里还不稳，<br>之后每天推的题才不会太简单或太难。答错不扣任何东西，放心写。</p>
+        <div class="session-actions">
+          <button class="btn big glow" id="placement-start">${resume ? `继续摸底（第 ${pos}/${total} 题）` : '开始摸底'}</button>
+          <button class="btn secondary" id="placement-skip">跳过，直接开练</button>
+        </div>
+      </div>`;
+    el.querySelector('#placement-start').addEventListener('click', () => {
+      const cur = Store.placement.active;
+      if (!cur || cur.subjectId !== sid) {
+        if (!Placement.build(sid)) {
+          Ui.popup('暂无可摸底的题', `${subjName}题库还没准备好摸底内容，先直接练吧。`, 'cool');
+          this._placementDismissed = true;
+          return this.renderPractice(el);
+        }
+      }
+      this.renderPlacementQuestion(el);
+    });
+    el.querySelector('#placement-skip').addEventListener('click', () => {
+      this._placementDismissed = true;
+      this.renderPractice(el);
+    });
+  },
+
+  renderPlacementQuestion(el) {
+    const fab = document.getElementById('dad-fab');
+    if (fab) fab.classList.add('hidden'); // 答题页收起悬浮球，别挡题干和选项
+    const q = Placement.current();
+    if (!q) return this.renderPlacementEnd(el, Placement.finish());
+    this.startAt = Date.now();
+    this.answered = false;
+    const { pos, total } = Placement.progress();
+    const typeLabel = { single: '单选', multi: '多选', fill: '填空', judge: '判断' }[q.type];
+    let body = '';
+    if (q.type === 'single' || q.type === 'judge' || q.type === 'multi') {
+      body = `<div class="options" id="options">` + q.options.map((opt, i) =>
+        `<button class="option" data-idx="${i}">${opt}</button>`).join('') + `</div>`;
+    } else {
+      body = `<input class="fill-input" id="fill-answer" placeholder="输入答案" autocomplete="off">`;
+    }
+    el.innerHTML = `
+      <div class="card quiz">
+        <div class="quiz-top">
+          <span class="stage-badge">入学摸底</span>
+          <span class="muted">第 ${pos}/${total} 题 · ${typeLabel} · 难度 ${'★'.repeat(q.difficulty)}</span>
+          <button class="btn secondary small" id="placement-quit" style="margin-left:auto">退出</button>
+        </div>
+        <div class="stem">${q.stem}</div>
+        ${body}
+        <div id="result-zone"></div>
+        <div class="quiz-actions" id="action-zone">
+          <button class="btn" id="submit-btn" disabled>提交</button>
+          <span class="muted" id="submit-hint"></span>
+        </div>
+      </div>`;
+    this.bindPlacement(q, el);
+  },
+
+  bindPlacement(q, el) {
+    const options = el.querySelectorAll('.option');
+    const submitBtn = el.querySelector('#submit-btn');
+    const hint = el.querySelector('#submit-hint');
+    let selected = [];
+    const hasAnswer = () => {
+      if (q.type === 'multi' || q.type === 'single' || q.type === 'judge') return selected.length > 0;
+      return (el.querySelector('#fill-answer').value || '').trim() !== '';
+    };
+    const refresh = () => { submitBtn.disabled = !hasAnswer(); hint.textContent = ''; };
+    if (q.type === 'multi') {
+      options.forEach(o => o.addEventListener('click', () => {
+        const idx = Number(o.dataset.idx);
+        selected = selected.includes(idx) ? selected.filter(i => i !== idx) : selected.concat(idx);
+        options.forEach(oo => oo.classList.toggle('selected', selected.includes(Number(oo.dataset.idx))));
+        refresh();
+      }));
+    } else if (options.length) {
+      options.forEach(o => o.addEventListener('click', () => {
+        selected = [Number(o.dataset.idx)];
+        options.forEach(oo => oo.classList.toggle('selected', Number(oo.dataset.idx) === selected[0]));
+        refresh();
+      }));
+    }
+    const submit = () => {
+      if (this.answered) return;
+      if (!hasAnswer()) { hint.textContent = '请先作答再提交'; return; }
+      const answer = q.type === 'multi' ? selected
+        : (q.type === 'single' || q.type === 'judge') ? selected[0]
+        : el.querySelector('#fill-answer').value;
+      this.submitPlacement(q, answer, el);
+    };
+    submitBtn.addEventListener('click', submit);
+    refresh();
+    const fill = el.querySelector('#fill-answer');
+    if (fill) {
+      fill.focus();
+      fill.addEventListener('input', refresh);
+      fill.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
+    }
+    el.querySelector('#placement-quit').addEventListener('click', () => {
+      if (!confirm('退出摸底？进度会保留，下次进来从这一题继续。')) return;
+      this.renderPractice(el);
+    });
+  },
+
+  submitPlacement(q, answer, el) {
+    const actualTime = (Date.now() - this.startAt) / 1000;
+    const correct = Quiz.grade(q, answer) === true;
+    this.answered = true;
+    Placement.record(q, correct, actualTime, Date.now());
+    // 揭晓：对 → 直接下一题；错 → 给答案和解析（摸底是这些点的第一次讲解）
+    let correctText = '';
+    if (q.type === 'single' || q.type === 'judge' || q.type === 'multi') {
+      const correctSet = q.type === 'multi' ? (Array.isArray(q.answer) ? q.answer : [q.answer]).map(Number) : [Number(q.answer)];
+      const userSet = (Array.isArray(answer) ? answer : [answer]).map(Number);
+      el.querySelectorAll('.option').forEach(o => {
+        const idx = Number(o.dataset.idx);
+        if (correctSet.includes(idx)) o.classList.add('correct');
+        else if (!correct && userSet.includes(idx)) o.classList.add('wrong');
+      });
+      if (!correct) correctText = correctSet.map(i => q.options[i]).join('、');
+    }
+    const zone = el.querySelector('#result-zone');
+    // 对错结论放最前面（大字彩条），别让学生靠猜颜色判断（学生体验 ISSUE）
+    zone.innerHTML = correct
+      ? `<div class="result good">✅ 答对了！这题你是稳的。</div>
+         <div class="muted" style="margin-top:8px"><strong>解析：</strong>${q.explanation || '（暂无解析）'}</div>`
+      : `<div class="result bad">❌ 答错了${correctText ? `，正确答案是 <strong>${correctText}</strong>` : ''}——这题不稳，看一眼解析，不用记。</div>
+         ${q.type === 'fill' ? this.answerCompareHTML(q, answer) : ''}
+         <div class="muted" style="margin-top:8px"><strong>解析：</strong>${q.explanation || '（暂无解析）'}</div>`;
+    // 手机上反馈常落在视口外，提交后自动带过来，省得学生自己往下划
+    zone.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    const actions = el.querySelector('#action-zone');
+    actions.innerHTML = `<button class="btn" id="placement-next">下一题</button>`;
+    actions.querySelector('#placement-next').addEventListener('click', () => this.renderPlacementQuestion(el));
+  },
+
+  renderPlacementEnd(el, summary) {
+    if (!summary) return this.renderPractice(el);
+    const idx = Store.kpIndex();
+    const weak = summary.weakKps.map(id => (idx[id] ? idx[id].name : '')).filter(Boolean);
+    el.innerHTML = `
+      <div class="card hero">
+        <h2>🧭 摸底完成：${summary.correctCount}/${summary.total} 题通过</h2>
+        <p class="muted">系统对你的起点有数了，今天的计划已经按实测水平安排。</p>
+        ${weak.length ? `
+          <p style="margin-top:8px"><strong>已标记不稳的点：</strong>${weak.join('、')}</p>
+          <p class="muted">这些点不会硬塞给你刷题——系统会先带你回炉看微课，学完自测通过再进练习。</p>` : `
+          <p style="margin-top:8px">基础探针全过，系统会从更高一点的难度开始安排。</p>`}
+        <div class="session-actions">
+          <button class="btn big glow" id="placement-done">好，开始今天的练习</button>
+        </div>
+      </div>`;
+    el.querySelector('#placement-done').addEventListener('click', () => this.renderPractice(el));
+  },
+
   // ================= 练习：开工 =================
-  // 今日计划（Scheduler 决策）+ 会考倒计时 + 科目自选（自主权规范 §11.1：系统推荐 + 自己确认/调整）
+  // 今日计划（Scheduler 决策）+ 科目自选（自主权规范 §11.1：系统推荐 + 自己确认/调整）
   renderPractice(el) {
+    const fab = document.getElementById('dad-fab');
+    if (fab) fab.classList.remove('hidden'); // 回到列表页恢复「问爸爸」悬浮球
     // 中途离开再回来：继续当前 session
     if (this.session && this.session.idx < this.session.stages.length) {
       return this.renderStage(el);
@@ -421,27 +644,32 @@ const App = {
     if (saved) return this.renderResumeSession(el, saved);
     const now = Date.now();
     const sid = this.activeSubject() ? this.activeSubject().id : '';
+    // 入学摸底：该科目未摸底且未被本次会话跳过 → 先引导摸底（摸底前的今日计划基于默认分，是瞎推的）
+    if (!this._placementDismissed && sid && Placement.needed(sid)) return this.renderPlacementIntro(el);
     const blocks = Scheduler.plan(now, this.planSalt);
     this.dailyPlan = blocks;
     const subjName = id => { const s = Store.subjects.find(x => x.id === id); return s ? s.name : ''; };
     const modeCls = { '悬赏清缴': 'bounty', '保养加固': 'maintain' };
     const modeIcon = { '悬赏清缴': '🎯', '保养加固': '🛠️', '突破摸底': '⚔️', '突破推进': '⚔️', '考试冲刺': '🔥' };
-    const examSub = Store.subjects.find(s => s.exam);
     // 本周习惯 + 免死金牌（对比分析 B1）：今天断签自动保底 1 天并提示一次（一次性）
     const habit = Scheduler.habit(now);
     if (habit.protect) {
       Scheduler.useShield(now);
       Ui.popup('🛡️ 免死金牌自动启用', '今天还没开张，本周习惯先保底 1 天。明天练起来，别把金牌当枕头。', 'cool');
     }
+    // 连续全勤表扬：本周首次达成 7/7 时触发一次（按 weekKey 去重，避免每次进主页重复）
+    if (habit.effective >= 7 && (Store.settings || {}).praiseFullWeek !== habit.weekKey) {
+      Store.settings = { ...Store.settings, praiseFullWeek: habit.weekKey };
+      Celebrate.praise({ title: '连续全勤！妈妈给你颁个奖 🏆', text: '本周 7 天全勤，说到做到，太棒啦！' });
+    }
     // 放松小游戏（阶段 3 §10.5：奖励性收尾，数据回流掌握度/复习队列）；周末彩蛋家长挑战
     const isWeekend = [0, 6].includes(new Date(now).getDay());
     const dueWords = Games.flashDue(now).length;
+    const arithDone = (Store.dayStat(Store.todayKey(now)).arithRounds || 0) > 0;
     el.innerHTML = `
       ${this.statusStripHTML(now, habit, blocks)}
-      ${this.todayTodoHTML(now, sid)}
-      <div class="card hero">
+      <div class="card hero plan-card">
         <h2>📋 今日计划，点一块直接开练</h2>
-        <p class="muted">${COPY.sessionStart}</p>
         <div class="plan-grid">
           ${blocks.map((b, i) => `
             <button class="plan-block mode-${modeCls[b.mode] || 'break'}${i === 0 ? ' primary' : ''}" id="${i === 0 ? 'start-session' : ''}" data-plan="${b.subjectId}">
@@ -450,14 +678,22 @@ const App = {
               <span class="plan-reasons">${b.reasons.join(' · ')}</span>
               <span class="plan-count">${b.count} 题 · 约 15 分钟（含讲解）${this.planDone.includes(b.subjectId) ? ' · ✅ 已完成' : ''}</span>
             </button>`).join('')}
+          <button class="plan-block mode-break" id="daily-arith">
+            <span class="plan-tag">⚡ 每日速算</span>
+            <span class="plan-subject">计算基本功 · 5 分钟</span>
+            <span class="plan-reasons">负数 / 乘方 / 去括号 / 分式</span>
+            <span class="plan-count">${arithDone ? '✅ 今日已完成' : '每天练一把，计算不丢分'}</span>
+          </button>
         </div>
         <div class="session-actions">
+          ${blocks.length ? '<button class="btn big glow" id="start-now">▶ 点我开工</button>' : ''}
           ${blocks.length === 0 ? '<button class="btn big glow" id="start-session-fallback">开整（6 题一组，含讲解约 15 分钟）</button>' : ''}
           <button class="btn secondary" id="reroll-plan">🔄 换个组合</button>
         </div>
       </div>
-      <button class="scope-toggle" id="scope-toggle">⚙️ 自选科目 / 单元 ${this.scopeOpen ? '▴' : '▾'}</button>
-      <div id="scope-area"${this.scopeOpen ? '' : ' style="display:none"'}>${this.scopeOpen ? this.scopePickerHTML(sid) : ''}</div>
+      ${this.todayTodoHTML(now, sid)}
+      ${this.reheatCardHTML(sid)}
+      ${this.scopePickerHTML(sid)}
       <div class="card">
         <h2>🎮 放松小游戏</h2>
         <p class="muted">游戏是奖励性收尾——练完再玩。闪电心算回流计算掌握度；单词快闪答错的词会自动进复习队列。</p>
@@ -467,10 +703,19 @@ const App = {
           ${dueWords > 0 ? `<button class="btn secondary" id="game-flash-review">🔁 单词复习（${dueWords} 个到期）</button>` : ''}
           ${isWeekend ? `<button class="btn secondary" id="parent-challenge">👨‍👦 家长挑战（周末彩蛋）</button>` : ''}
         </div>
+      </div>
+      <div class="session-actions">
+        <button class="btn secondary" id="home-brief">📊 学习汇报（给家长看）</button>
+        <button class="btn secondary" id="home-grade">📈 成绩汇报</button>
       </div>`;
     this.bindSubjectBar(el, () => this.renderPractice(el));
     this.bindUnitBar(el, sid, () => this.renderPractice(el));
+    const gradeOpen = el.querySelector('#grade-open');
+    if (gradeOpen) gradeOpen.addEventListener('click', () => this.openGradeModal());
     this.wireTodo(el);
+    // 回炉卡点击即开练该弱点（焦点练习）
+    el.querySelectorAll('[data-reheat]').forEach(btn =>
+      btn.addEventListener('click', () => this.startFocus(btn.dataset.reheat, el)));
     // 计划卡点击即开工；首块同时是页面主行动入口（#start-session，E2E/习惯锚点）
     el.querySelectorAll('[data-plan]').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -479,38 +724,28 @@ const App = {
         this.renderStage(el);
       });
     });
+    // 主行动开工按钮：排在「换个组合」旁，点击等同计划首块（切到首科并开练）
+    const startNow = el.querySelector('#start-now');
+    if (startNow) startNow.addEventListener('click', () => {
+      Store.activeSubjectId = blocks[0].subjectId;
+      this.session = Quiz.planSession(Date.now());
+      this.renderStage(el);
+    });
     // 兜底开工按钮（仅无计划时存在；独立 id，避免与计划卡的 #start-session 撞车）
     const fallback = el.querySelector('#start-session-fallback');
     if (fallback) fallback.addEventListener('click', () => {
       this.session = Quiz.planSession(Date.now());
       this.renderStage(el);
     });
-    // 自选练习区（默认折叠）：展开时懒渲染选科卡，之后只切显隐不重渲（保住已选科目/单元）
-    const scopeToggle = el.querySelector('#scope-toggle');
-    const scopeArea = el.querySelector('#scope-area');
-    const wireScope = scope => {
-      this.bindSubjectBar(scope, () => { this.scopeOpen = true; this.renderPractice(el); });
-      this.bindUnitBar(scope, sid, () => { this.scopeOpen = true; this.renderPractice(el); });
-      const sm = scope.querySelector('#start-manual');
-      if (!sm) return;
-      sm.addEventListener('click', async () => {
-        if (sm.disabled) return;
-        sm.disabled = true;
-        const added = await this.ensureScopeQuestions(6, (i, n) => { sm.textContent = `正在出题 ${i}/${n}…`; });
-        if (added > 0) sm.textContent = `已补 ${added} 题，开练…`;
-        this.session = Quiz.planSession(Date.now());
-        this.renderStage(el);
-      });
-    };
-    if (this.scopeOpen) wireScope(el);
-    scopeToggle.addEventListener('click', () => {
-      this.scopeOpen = !this.scopeOpen;
-      if (this.scopeOpen && !scopeArea.innerHTML) {
-        scopeArea.innerHTML = this.scopePickerHTML(sid);
-        wireScope(scopeArea);
-      }
-      scopeArea.style.display = this.scopeOpen ? '' : 'none';
-      scopeToggle.textContent = `⚙️ 自选科目 / 单元 ${this.scopeOpen ? '▴' : '▾'}`;
+    // 自选练习区（常显）：选科 + 学到哪儿（下拉）+ 手动开练
+    const startManual = el.querySelector('#start-manual');
+    if (startManual) startManual.addEventListener('click', async () => {
+      if (startManual.disabled) return;
+      startManual.disabled = true;
+      const added = await this.ensureScopeQuestions(6, (i, n) => { startManual.textContent = `正在出题 ${i}/${n}…`; });
+      if (added > 0) startManual.textContent = `已补 ${added} 题，开练…`;
+      this.session = Quiz.planSession(Date.now());
+      this.renderStage(el);
     });
     el.querySelector('#reroll-plan').addEventListener('click', () => {
       this.planSalt += 1;
@@ -518,11 +753,6 @@ const App = {
       this.renderPractice(el);
     });
     // 阶段 3：考试模式开关 / 小游戏 / 家长挑战
-    const examOn = el.querySelector('#exam-mode-on');
-    if (examOn) examOn.addEventListener('click', () => {
-      Scheduler.setExamMode(examSub.id);
-      this.renderPractice(el);
-    });
     const examOff = el.querySelector('#exam-mode-off');
     if (examOff) examOff.addEventListener('click', () => {
       Scheduler.clearExamMode();
@@ -530,20 +760,25 @@ const App = {
     });
     const ga = el.querySelector('#game-arith');
     if (ga) ga.addEventListener('click', () => this.renderArithGame(el));
+    const da = el.querySelector('#daily-arith');
+    if (da) da.addEventListener('click', () => this.renderArithGame(el, { seconds: 300, daily: true }));
     const gf = el.querySelector('#game-flash');
     if (gf) gf.addEventListener('click', () => this.renderFlashGame(el));
     const gfr = el.querySelector('#game-flash-review');
     if (gfr) gfr.addEventListener('click', () => this.renderFlashReview(el));
     const pc = el.querySelector('#parent-challenge');
     if (pc) pc.addEventListener('click', () => this.renderParentChallenge(el));
+    // 家长入口：主页一键进「学习汇报」页
+    const hb = el.querySelector('#home-brief');
+    if (hb) hb.addEventListener('click', () => this.show('brief'));
+    const hg = el.querySelector('#home-grade');
+    if (hg) hg.addEventListener('click', () => this.show('grade'));
   },
 
-  // 主页状态带（首行细条）：问候 + 会考倒计时/冲刺 + 本周习惯 + 免死金牌
-  // 会考分级沿用 level-cool/warm/hot 语义；按钮 id 不变，#exam-mode-on/off 事件绑定复用
+  // 主页状态带（首行细条）：问候 + 考试模式冲刺 + 本周习惯 + 免死金牌
+  // 按钮 id 不变，#exam-mode-off 事件绑定复用
   statusStripHTML(now, habit, blocks) {
     const parts = [Triggers.greeting(now, blocks, this.planDone)];
-    const days = Scheduler.examDaysLeft(now);
-    const examSub = Store.subjects.find(s => s.exam);
     let cls = 'level-cool';
     let btn = '';
     if (Scheduler.examModeOn()) {
@@ -551,27 +786,22 @@ const App = {
       parts.push(`🔥 考试模式：${es ? es.name : ''}冲刺中`);
       cls = 'level-hot';
       btn = '<button class="btn secondary small" id="exam-mode-off">退出考试模式</button>';
-    } else if (examSub && days > 0 && days <= 14) {
-      parts.push(`⏳ ${examSub.name}会考还有 <strong>${days}</strong> 天`);
-      cls = days <= 7 ? 'level-hot' : 'level-warm';
-      btn = '<button class="btn secondary small" id="exam-mode-on">一键切考试模式</button>';
-    } else if (days > 0 && days <= 365) {
-      parts.push(`⏳ 生地会考还有 <strong>${days}</strong> 天`);
     }
     parts.push(habit.effective >= 7 ? '🏆 本周 7/7 全勤' : `🔥 本周 ${habit.effective}/7 天`);
     parts.push(habit.shieldUsed ? '🛡️ 免死金牌已用' : '🛡️ 免死金牌 1 张');
     return `<div class="status-strip ${cls}">${parts.map(p => `<span class="strip-item">${p}</span>`).join('<span class="strip-sep">·</span>')}${btn}</div>`;
   },
 
-  // 自选练习区（默认折叠，展开才渲染）：选科 + 选单元 + 手动开练，逻辑全部复用
+  // 自选练习区（常显）：选科 + 学到哪儿（下拉）+ 手动开练 + 成绩录入入口（点击弹窗）
   scopePickerHTML(sid) {
     return `<div class="card pick-subject">
       <h2>📚 选择练习科目，选一科直接开</h2>
-      <p class="muted">点一科选中它，再选「学到哪本 / 哪单元」限定出题范围，然后开练。</p>
+      <p class="muted">点一科选中，再登记「学到哪儿」，只出学过的部分。</p>
       ${this.subjectBar()}
       ${this.unitBar(sid)}
       <div class="session-actions">
         <button class="btn glow" id="start-manual">开练（当前科目）</button>
+        <button class="btn secondary" id="grade-open">📈 汇报成绩</button>
       </div>
     </div>`;
   },
@@ -581,44 +811,44 @@ const App = {
     if (this._gameTimer) { clearInterval(this._gameTimer); clearTimeout(this._gameTimer); this._gameTimer = null; }
   },
 
-  // 闪电心算 60s：限时逐题，结算正确率 ≥60% 回流计算类知识点（Games.recordArith）
-  renderArithGame(el) {
+  // 限时速算：逐题作答，结算正确率 ≥60% 回流计算类知识点（Games.recordArith）
+  // 默认 60s 奖励游戏；每日计划入口传 { seconds: 300, daily: true } 变 5 分钟正式训练
+  renderArithGame(el, opts = {}) {
     this._clearGameTimer();
+    const seconds = opts.seconds || 60;
+    const daily = !!opts.daily;
     const state = { correct: 0, total: 0, t0: Date.now() };
     el.innerHTML = `
       <div class="card hero">
-        <div class="learn-head"><h2>⚡ 闪电心算 60s</h2><button class="btn secondary small" id="game-quit">退出</button></div>
+        <div class="learn-head"><h2>⚡ ${daily ? '每日速算 · 5 分钟' : '闪电心算 60s'}</h2><button class="btn secondary small" id="game-quit">退出</button></div>
         <p class="muted">只管快和准——正确率 ≥60% 会把「计算类」知识点回流 +3 掌握度。</p>
-        <div class="game-timer" id="game-timer">60</div>
+        <div class="game-timer" id="game-timer">${seconds}</div>
         <div class="stem" id="game-stem"></div>
-        <div class="game-actions">
-          <input class="fill-input" id="arith-answer" placeholder="答案" autocomplete="off" inputmode="numeric">
-          <button class="btn" id="arith-submit">确定</button>
-        </div>
+        <div class="options" id="arith-options"></div>
         <div class="muted" id="game-score">对 0 / 共 0</div>
       </div>`;
     el.querySelector('#game-quit').addEventListener('click', () => {
       this._clearGameTimer();
       this.renderPractice(el);
     });
-    let q = Games.makeArith();
-    el.querySelector('#game-stem').textContent = q.stem;
-    const submitAnswer = () => {
-      const v = input.value.trim();
-      if (v === '' || Number.isNaN(Number(v))) return;
-      state.total += 1;
-      if (Number(v) === q.answer) state.correct += 1;
-      input.value = '';
-      input.focus();
-      q = Games.makeArith();
+    let q = Games.makeArithChoice();
+    const renderQ = () => {
       el.querySelector('#game-stem').textContent = q.stem;
-      el.querySelector('#game-score').textContent = `对 ${state.correct} / 共 ${state.total}`;
+      el.querySelector('#arith-options').innerHTML = q.options
+        .map((o, i) => `<button class="option" data-idx="${i}">${o}</button>`).join('');
     };
-    const input = el.querySelector('#arith-answer');
-    el.querySelector('#arith-submit').addEventListener('click', submitAnswer);
-    input.addEventListener('keydown', e => { if (e.key === 'Enter') submitAnswer(); });
+    renderQ();
+    el.querySelector('#arith-options').addEventListener('click', e => {
+      const btn = e.target.closest('.option');
+      if (!btn) return;
+      state.total += 1;
+      if (Number(btn.dataset.idx) === q.answerIndex) state.correct += 1;
+      el.querySelector('#game-score').textContent = `对 ${state.correct} / 共 ${state.total}`;
+      q = Games.makeArithChoice();
+      renderQ();
+    });
     this._gameTimer = setInterval(() => {
-      const left = Math.max(0, 60 - Math.round((Date.now() - state.t0) / 1000));
+      const left = Math.max(0, seconds - Math.round((Date.now() - state.t0) / 1000));
       const t = el.querySelector('#game-timer');
       if (t) t.textContent = left;
       if (left <= 0) {
@@ -626,12 +856,13 @@ const App = {
         const res = Games.recordArith({
           correct: state.correct, total: state.total,
           avgMs: state.total ? Math.round((Date.now() - state.t0) / state.total) : 0,
+          daily,
         });
         const bumpLine = res.bumped.length > 0
           ? `<div class="result good">已回流 ${res.bumped.length} 个计算知识点（+3）</div>` : '';
         el.innerHTML = `
           <div class="card hero">
-            <h2>⚡ 闪电心算结算</h2>
+            <h2>⚡ ${daily ? '每日速算结算' : '闪电心算结算'}</h2>
             <p>${state.total} 题 · 对 ${state.correct} · 正确率 ${res.accuracy}%</p>
             <div class="muted">${res.accuracy >= 60 ? '够准，掌握度已回流。' : '正确率没到 60%，不回流——下次慢一点、稳一点。'}</div>
             ${bumpLine}
@@ -866,6 +1097,8 @@ const App = {
   },
 
   renderQuestion(el, stage, q) {
+    const fab = document.getElementById('dad-fab');
+    if (fab) fab.classList.add('hidden'); // 答题页收起悬浮球，别挡题干和选项
     const typeLabel = { single: '单选', multi: '多选', fill: '填空', judge: '判断', subjective: '主观' }[q.type];
     const comboChip = this.session.combo >= 2 ? `<span class="combo-pop">连击 ×${this.session.combo} 🔥</span>` : '';
     // 关卡进度点：答完的实心、当前的放大高亮。题量按本组实际可出题数，不足 6 题时不虚标（ISSUE-004）
@@ -958,11 +1191,10 @@ const App = {
       subj.addEventListener('input', refreshSubmit);
       subj.addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) submit(); });
     }
-    // 中途退出：清掉 session 才算真退出（否则 renderPractice 会继续这组）
+    // 中途退出：内存放掉这组回主页，但存盘不清——下次进练习可选「继续这组 / 重开」（别把进度丢了）
     el.querySelector('#quiz-quit').addEventListener('click', () => {
-      if (!confirm('退出本组？这一组的进度不保存。')) return;
+      if (!confirm('退出本组？进度会留着，回来接着做。')) return;
       this.session = null;
-      this._clearSession();
       this.renderPractice(el);
     });
   },
@@ -974,6 +1206,9 @@ const App = {
     this._saveSession(); // 作答即存盘：反馈页刷新也不丢这一题
     if (res.isSubjective) this.renderFeynman(el, q, answer, actualTime, res);
     else this.renderFeedback(el, q, answer, actualTime, res);
+    // 手机上反馈常落在视口外，提交后自动带过来，省得学生自己往下划
+    const zone = el.querySelector('#result-zone');
+    if (zone) zone.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   },
 
   // 主观题费曼复述（阶段 1 §13.3 强制）：先用自己的话讲思路，讲完才放解析
@@ -1019,7 +1254,7 @@ const App = {
   explainCardHTML(q, answer) {
     const ref = this.textbookRef(Store.kpIndex()[q.knowledgePointId]);
     const lessonHint = Lesson.versions(q.knowledgePointId).length > 0
-      ? `<div class="muted" style="margin-top:6px">这一节配了 90 秒微课，看完再回来做更稳。</div>` : '';
+      ? `<div class="muted" style="margin-top:6px">这一节配了 90 秒微课，看完再回来做更稳。 <button class="btn secondary small" id="lesson-entry">上微课（90 秒）</button></div>` : '';
     return `
       <div class="card explain-card">
         <div><strong>这道题考什么：</strong>${this.kpName(q.knowledgePointId) || '本题知识点'}</div>
@@ -1027,8 +1262,30 @@ const App = {
         <div class="muted" style="margin-top:8px"><strong>解析：</strong>${q.explanation || '（暂无解析）'}</div>
         ${ref ? `<div class="muted" style="margin-top:6px"><strong>章节定位：</strong>${ref}</div>` : ''}
         ${lessonHint}
+        ${Speech.btnHTML('explain')}
         <div id="solve-slot">${this.solveSlotHTML(q, answer)}</div>
       </div>`;
+  },
+
+  // 讲解卡朗读文本：只念「考什么 + 解析 + 章节定位」；作答对照不念（学生自己的错答没必要回放）
+  explainSpeechText(q) {
+    const ref = this.textbookRef(Store.kpIndex()[q.knowledgePointId]);
+    return [
+      `这道题考什么。${this.kpName(q.knowledgePointId) || '本题知识点'}`,
+      `解析。${q.explanation || '暂无解析'}`,
+      ref ? `章节定位。${ref}` : '',
+    ].join(' ');
+  },
+
+  // 讲解卡朗读按钮接线（作用域 explain）
+  wireExplainCard(root, q) {
+    Speech.wire(root, 'explain', () => this.explainSpeechText(q));
+  },
+
+  // 讲解卡上的微课入口接线：点击直达 90 秒微课（省去先点「看懂了，继续」）
+  wireLessonEntry(root, onTake) {
+    const btn = root.querySelector('#lesson-entry');
+    if (btn) btn.addEventListener('click', onTake);
   },
 
   // 逐步解法槽位（只读、无副作用）：有缓存渲染步骤；无缓存且有 Key 给按钮；无 Key 则什么都不显示
@@ -1116,7 +1373,10 @@ const App = {
           ? `<div class="result good">🎯 悬赏销号！${COPY.closureDone}</div>`
           : `<div class="result bad">变式没过——这道题转入顽固清单。别硬刷，换个讲法重讲一遍再来。</div>`;
       }
-      if (this.stage.type === 'variant' && res.correct === true) Ui.popup('🎯 悬赏销号！', COPY.closureDone, 'success');
+      if (this.stage.type === 'variant' && res.correct === true) {
+        Ui.popup('🎯 悬赏销号！', COPY.closureDone, 'success');
+        Celebrate.praise({ title: '又销一号！妈妈给你鼓掌 🎯', text: COPY.closureDone });
+      }
       const cmp = q.type === 'fill' && res.correct === false ? this.answerCompareHTML(q, answer) : '';
       zone.innerHTML = head + cmp + `<div class="muted" style="margin-top:8px"><strong>解析：</strong>${q.explanation || '（暂无解析）'}</div>`;
       const hasLesson = Lesson.versions(q.knowledgePointId).length > 0;
@@ -1142,12 +1402,15 @@ const App = {
       const comboHTML = res.combo >= 2 ? `<span class="combo-pop">连击 ×${res.combo} 🔥</span>` : '';
       const speedNote = res.rating === 'S' ? '——这题你是真懂它'
         : res.rating === 'C' ? '——离 S 级还差一点，练到快就稳了' : '';
-      if (res.newlyMastered) Ui.popup('💡 新技能点亮！', `「${this.kpName(q.knowledgePointId)}」亮灯成功，继续乘胜追击。`, 'success');
+      if (res.newlyMastered) {
+        Ui.popup('💡 新知识点亮！', `「${this.kpName(q.knowledgePointId)}」亮灯成功，继续乘胜追击。`, 'success');
+        Celebrate.praise({ title: '知识点亮！妈妈为你骄傲 💡', text: `「${this.kpName(q.knowledgePointId)}」亮灯成功。` });
+      }
       const fact = Facts.tryDrop();
       if (fact) Ui.popup('💠 冷知识卡 +1', fact.text, 'party');
       zone.innerHTML = `
         <div class="result good">
-          ${ratingHTML} 掌握度 ${res.before} → ${res.after}（${delta >= 0 ? '+' : ''}${delta}）${comboHTML}
+          ✅ 答对了！${ratingHTML} 掌握度 ${res.before} → ${res.after}（${delta >= 0 ? '+' : ''}${delta}）${comboHTML}
         </div>
         <div class="muted" style="margin-top:8px">用时 ${Math.round(actualTime)}s（标准 ${q.expectedTime}s）${speedNote}</div>
         <div class="muted" style="margin-top:8px"><strong>解析：</strong>${q.explanation || '（暂无解析）'}</div>`;
@@ -1159,7 +1422,7 @@ const App = {
     // ---- 答错（普通题）：先归因（自选错因）→ 再看讲解 → 标记看懂 →（有微课→推荐微课）
     // 连错 2 题降难度时附一条冷笑话（放松模块 §9.7，频率红线每天 ≤2 次），笑话走彩色弹窗
     const joke = res.degradedNext && Jokes.canTell() ? Jokes.pick() : '';
-    if (joke) Ui.popup('🤣 阿K的冷笑话', joke, 'joy');
+    if (joke) Ui.popup('🤣 爸爸的冷笑话', joke, 'joy');
     // 揭晓前不展示正确答案与作答对照，先让学生自己归因（答案揭晓后移）
     zone.innerHTML = `
       ${res.degradedNext ? `<div class="result bad">${COPY.doubleWrong}</div>` : ''}
@@ -1174,22 +1437,21 @@ const App = {
       btn.addEventListener('click', () => {
         const type = btn.dataset.type;
         Wrongbook.setErrorType(res.wrongRecordId, type);
-        const rec = Wrongbook.get(res.wrongRecordId);
-        // 有 Key：追问式讲解（考什么→下一步→重做）；无 Key：降级为文字解析（§9.1）
-        // 收尾走公共 afterUnderstood：有微课 → 继续推微课；否则进跟进练习二选一
-        if (rec && AI.hasKey()) {
-          this.renderSocratic(el, q, rec, () => this.afterUnderstood(el, q, type, res.wrongRecordId));
-          return;
-        }
         // 揭晓时刻：出题级讲解卡（考什么 + 答案依据 + 章节定位），并标绿正确答案
+        // 收尾走公共 afterUnderstood：有微课 → 继续推微课；否则进跟进练习二选一
         zone.innerHTML = `
           <div class="result bad">错因已记下：${type}。3 天后原题重做，7 天后变式挑战，全过才销号。</div>
           ${this.explainCardHTML(q, answer)}
           <div id="ask-slot"></div>`;
         this.wireSolveCard(zone, q, answer);
+        this.wireExplainCard(zone, q);
+        this.wireLessonEntry(zone, () => {
+          Wrongbook.markUnderstood(res.wrongRecordId, Date.now());
+          Lesson.render(q.knowledgePointId, el, () => this.onLessonPassed(el, q.knowledgePointId));
+        });
         this.revealAnswer(el, q);
         actions.innerHTML = `<button class="btn" id="understood-btn">看懂了，继续</button>
-          <button class="btn secondary" id="ask-btn" style="margin-left:8px">还是不懂，问学长</button>`;
+          <button class="btn secondary" id="ask-btn" style="margin-left:8px">还是不懂，问爸爸</button>`;
         actions.querySelector('#understood-btn').addEventListener('click', () => {
           this.afterUnderstood(el, q, type, res.wrongRecordId);
         });
@@ -1291,8 +1553,10 @@ const App = {
     this.renderStage(el);
   },
 
-  // 「下一步练什么」直通车：结算/收工时就地给出最该攻的点，一键开练（省去进技能树逐个找）
+  // 「下一步练什么」直通车：结算/收工时就地给出最该攻的点，一键开练（省去进知识树逐个找）
   nextTargetCardHTML(now, subjectId) {
+    // 同今日待办：「学到哪儿」没登记时不推具体知识点，免得推到还没学的章节
+    if (!this.unitScopeFor(subjectId).bookId) return '';
     const t = Report.nextTarget(now, subjectId);
     if (!t) return '';
     const subj = Store.subjects.find(s => s.id === t.kp.subjectId);
@@ -1312,11 +1576,28 @@ const App = {
     if (btn) btn.addEventListener('click', () => this.startFocus(btn.dataset.kp, el));
   },
 
+  // 摸底回炉卡：把「摸底里不稳的点」显性摆出来一键开练；补到 70 分以上自动撤下
+  reheatCardHTML(sid) {
+    const weak = ((Store.placement || {}).weak || {})[sid] || [];
+    const kps = weak.map(id => Store.kpIndex()[id])
+      .filter(k => k && ((Store.mastery[k.id] || {}).score || 0) < 70);
+    if (!kps.length) return '';
+    return `<div class="card">
+      <h2>🔥 摸底回炉清单</h2>
+      <p class="muted">摸底里这些点不稳——先补再练，别硬刷。补到自测通过就自动撤下。</p>
+      <div class="session-actions">
+        ${kps.map(k => `<button class="btn secondary" data-reheat="${k.id}">${this.bankEsc(k.name)}</button>`).join('')}
+      </div>
+    </div>`;
+  },
+
   // 今日待办聚合：到期悬赏 + 最该攻的点，合成一条入口，一键开练（省去翻菜单找题）
   todayTodos(now, sid) {
     const due = Wrongbook.due(now);
     const dueCount = due.retests.concat(due.variants).filter(r => r.subjectId === sid).length;
-    return { dueCount, target: Report.nextTarget(now, sid) };
+    // 「学到哪儿」没登记时不推具体知识点：可能推到还没学的章节（与超纲提醒自相矛盾）
+    const scoped = !!this.unitScopeFor(sid).bookId;
+    return { dueCount, target: scoped ? Report.nextTarget(now, sid) : null };
   },
 
   todayTodoHTML(now, sid) {
@@ -1369,9 +1650,19 @@ const App = {
   },
 
   renderSessionEnd(el) {
+    const fab = document.getElementById('dad-fab');
+    if (fab) fab.classList.remove('hidden'); // 结算页恢复「问爸爸」悬浮球
     const now = Date.now();
     const s = this.session || { results: [] };
     if (s.results.length > 0) Ui.popup('🎉 一组搞定！', `这组 ${s.results.length} 题练完了，收工愉快。`, 'party');
+    // 全对 / 高分结算表扬：只看本组非主观题（correct 为 true/false）
+    const graded = s.results.filter(r => r.correct === true || r.correct === false);
+    const right = graded.filter(r => r.correct === true).length;
+    if (graded.length >= 4 && right === graded.length) {
+      Celebrate.praise({ title: '全对！妈妈给你满分表扬 🎉', text: `本组 ${graded.length} 题一道没错，太稳了！` });
+    } else if (graded.length >= 4 && right / graded.length >= 0.85) {
+      Celebrate.praise({ title: '高分！妈妈给你点个赞 👏', text: `本组正确率 ${Math.round((right / graded.length) * 100)}%，继续保持！` });
+    }
     const lit = s.results.filter(r => r.newlyMastered).length;
     const subj = this.activeSubject();
     if (subj && !this.planDone.includes(subj.id)) { this.planDone.push(subj.id); this._savePlanProgress(); }
@@ -1380,16 +1671,16 @@ const App = {
     el.innerHTML = `
       <div class="card greet">
         <h2>${this.pick(COPY.sessionEnd)}</h2>
-        ${lit > 0 ? `<div class="lit-banner">💡 今天新点亮 ${lit} 个技能点</div>` : ''}
+        ${lit > 0 ? `<div class="lit-banner">💡 今天新点亮 ${lit} 个知识点</div>` : ''}
         ${Report.battleCardHTML(now)}
-        ${s.results.length > 0 && s.results.length < 6 ? `<div class="muted" style="margin-top:8px">本组共 ${s.results.length} 题（该范围能出的题有限）。想练满 6 题，可在「设置」里配置 AI 学长现场补题。</div>` : ''}
+        ${s.results.length > 0 && s.results.length < 6 ? `<div class="muted" style="margin-top:8px">本组共 ${s.results.length} 题（该范围能出的题有限）。想练满 6 题，可在「设置」里配置 AI 爸爸现场补题。</div>` : ''}
         ${proMsg}
         ${this.nextTargetCardHTML(now, subj ? subj.id : '')}
         <div class="session-actions">
           ${next ? `<button class="btn big glow" id="next-subject-btn">下一科：${next.name}（${next.mode}）→</button>` : ''}
           <button class="btn" id="again-btn">再来一组</button>
           ${!next ? `<button class="btn secondary" id="done-today-btn">今天收工 🎉</button>` : ''}
-          <button class="btn secondary" id="report-btn">看看技能树</button>
+          <button class="btn secondary" id="report-btn">看看知识树</button>
         </div>
       </div>`;
     this.session = null;
@@ -1415,9 +1706,9 @@ const App = {
       <div class="card hero">
         <h2>收工！今天这波稳 ✅</h2>
         ${Report.battleCardHTML(Date.now())}
-        <p class="muted">睡前 10 分钟过一遍悬赏榜上的错题——睡眠会帮你把它焊牢。</p>
+        <p class="muted">睡前 10 分钟过一遍错题榜——睡眠会帮你把它焊牢。</p>
         <div class="session-actions">
-          <button class="btn" id="report-btn2">看看今天的技能树</button>
+          <button class="btn" id="report-btn2">看看今天的知识树</button>
         </div>
       </div>
       ${this.nextTargetCardHTML(Date.now(), '')}`;
@@ -1425,7 +1716,7 @@ const App = {
     this.wireNextTarget(el);
   },
 
-  // ================= 悬赏榜 =================
+  // ================= 错题榜 =================
   renderWrongbook(el) {
     const now = Date.now();
     const sid = this.activeSubject() ? this.activeSubject().id : '';
@@ -1437,13 +1728,13 @@ const App = {
     active.sort((a, b) => (STATUS_ORDER[a.status] ?? 9) - (STATUS_ORDER[b.status] ?? 9) || b.firstWrongAt - a.firstWrongAt);
 
     if (active.length === 0 && closed.length === 0) {
-      el.innerHTML = `<div class="card"><h2>悬赏榜</h2>${this.subjectBar()}<div class="empty">空空如也——好事。错题自动上榜，走完闭环（重做→变式）才算销号离场。</div></div>`;
+      el.innerHTML = `<div class="card"><h2>错题榜</h2>${this.subjectBar()}<div class="empty">空空如也——好事。错题自动上榜，走完闭环（重做→变式）才算销号离场。<br>摸底里错的题不算悬赏，已收进「今日计划」的回炉清单，学完自测通过就消化掉了。</div></div>`;
       this.bindSubjectBar(el, () => this.renderWrongbook(el));
       return;
     }
 
     const chipCls = { '待处理': 'chip-gray', '重做中': 'chip-blue', '变式待测': 'chip-mid', '顽固': 'chip-bad' };
-    let html = `<div class="card"><h2>悬赏榜</h2>${this.subjectBar()}`;
+    let html = `<div class="card"><h2>错题榜</h2>${this.subjectBar()}`;
     if (active.length >= Wrongbook.LIMIT) {
       html += `<div class="due-banner">⚠️ 活跃悬赏已达 ${active.length} 道（上限 ${Wrongbook.LIMIT}）——先集中把「重做中/变式待测」的办掉，别让新错题堆积。</div>`;
     }
@@ -1557,11 +1848,16 @@ const App = {
           ${this.explainCardHTML(q, rec.myAnswer)}
           <div class="quiz-actions">
             <button class="btn" id="d0-understood">看懂了，3 天后重做</button>
-            <button class="btn secondary" id="d0-ask" style="margin-left:8px">还是不懂，问学长</button>
+            <button class="btn secondary" id="d0-ask" style="margin-left:8px">还是不懂，问爸爸</button>
           </div>
           <div id="d0-ask-slot"></div>
         </div>`;
       this.wireSolveCard(el, q, rec.myAnswer);
+      this.wireExplainCard(el, q);
+      this.wireLessonEntry(el, () => {
+        Wrongbook.markUnderstood(rec.id, Date.now());
+        Lesson.render(q.knowledgePointId, el, () => onDone());
+      });
       el.querySelector('#d0-understood').addEventListener('click', () => {
         Wrongbook.markUnderstood(rec.id, Date.now());
         onDone();
@@ -1588,184 +1884,12 @@ const App = {
     el.querySelectorAll('.error-type-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         Wrongbook.setErrorType(rec.id, btn.dataset.type);
-        // 有 Key：追问式讲解；无 Key：降级为文字解析
-        if (AI.hasKey()) {
-          this.renderSocratic(el, q, rec, () => {
-            Wrongbook.markUnderstood(rec.id, Date.now());
-            onDone();
-          });
-          return;
-        }
         showExplain();
       });
     });
   },
 
-  // ================= 追问式讲解：考什么 → 下一步 → 重做 =================
-  // 有 Key：阿K 苏格拉底式引导前两问，第三问同题重做（本地判分）；AI 掉线/超额随时降级文字解析
-  // 接管整个视图：重新画题面才能挡住原来高亮的正确答案，第三问重做才作数
-  renderSocratic(el, q, rec, onDone) {
-    const STEP_LABELS = ['考什么', '下一步', '重做'];
-    const STEP_ASKS = [
-      '先别急着看答案——你觉得这道题在考什么？用自己的话说一句。',
-      '行，方向有了。拿到这种题，第一步该干什么？说个大概。',
-      '思路过了一遍，现在重做这道题，用你刚说的办法。',
-    ];
-    const esc = s => String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
-    const log = [{ role: 'assistant', content: STEP_ASKS[0] }];
-    let step = 0;
-    let busy = false;
-
-    // 降级：保住已聊的内容 + 文字解析 + 「问学长」兜底（设计文档 §9.1）
-    const degrade = (errKey) => {
-      el.innerHTML = `
-        <div class="card socratic-card">
-          <div class="socratic-head"><h2>追问式讲解</h2><span class="muted">${Assistant.name()}这会儿不在</span></div>
-          <div class="chat-log">
-            ${log.map(t => `<div class="chat-bubble ${t.role === 'assistant' ? 'from-ai' : 'from-me'}">${esc(t.content)}</div>`).join('')}
-            <div class="chat-bubble from-ai">${AI_MSG[errKey] || AI_MSG.http}</div>
-          </div>
-          ${this.explainCardHTML(q, rec.myAnswer)}
-          <div class="quiz-actions">
-            <button class="btn" id="so-understood">看懂了，继续</button>
-            <button class="btn secondary" id="so-ask" style="margin-left:8px">还是不懂，问${Assistant.name()}</button>
-          </div>
-          <div id="so-ask-slot"></div>
-        </div>`;
-      this.wireSolveCard(el, q, rec.myAnswer);
-      el.querySelector('#so-understood').addEventListener('click', onDone);
-      el.querySelector('#so-ask').addEventListener('click', () => {
-        el.querySelector('#so-understood').style.display = 'none';
-        this.renderAskPanel(el.querySelector('#so-ask-slot'), rec, q, onDone);
-      });
-    };
-
-    const draw = (thinking) => {
-      el.innerHTML = `
-        <div class="card socratic-card">
-          <div class="socratic-head">
-            <h2>追问式讲解</h2>
-            <div class="socratic-steps">
-              ${STEP_LABELS.map((l, i) => `<span class="sostep${i === step ? ' cur' : i < step ? ' done' : ''}">${i + 1}. ${l}</span>`).join('<span class="so-arrow">→</span>')}
-            </div>
-          </div>
-          <div class="quiz-meta"><span class="muted">知识点：${this.kpName(q.knowledgePointId)} · 悬赏复盘</span></div>
-          ${step < 2 ? `
-            <div class="stem">${q.stem}</div>
-            ${q.options ? `<div class="example-opts">${q.options.map(o => `<div class="example-opt">${o}</div>`).join('')}</div>` : ''}` : ''}
-          <div class="chat-log">
-            ${log.map(t => `<div class="chat-bubble ${t.role === 'assistant' ? 'from-ai' : 'from-me'}">${esc(t.content)}</div>`).join('')}
-            ${thinking ? '<div class="chat-bubble from-ai chat-typing">学长在想……</div>' : ''}
-          </div>
-          ${step < 2 ? `
-            <div class="chat-input-row">
-              <input class="text-input" id="so-input" autocomplete="off" placeholder="用自己的话说一句">
-              <button class="btn" id="so-send">发送</button>
-            </div>` : ''}
-          <div id="so-body"></div>
-        </div>`;
-      if (step < 2) {
-        const input = el.querySelector('#so-input');
-        input.addEventListener('keydown', e => { if (e.key === 'Enter') send(input.value); });
-        input.focus();
-        el.querySelector('#so-send').addEventListener('click', () => send(input.value));
-      } else {
-        this.renderSocraticRedo(el.querySelector('#so-body'), q, rec, onDone);
-      }
-    };
-
-    const send = async (text) => {
-      const content = String(text || '').trim();
-      if (!content || busy) return;
-      busy = true;
-      log.push({ role: 'user', content });
-      draw(true);
-      const res = await Assistant.socraticGuide(step + 1, rec, q, content);
-      busy = false;
-      if (!res.ok) { log.pop(); degrade(res.error); return; }
-      log.push({ role: 'assistant', content: res.text });
-      step += 1;
-      log.push({ role: 'assistant', content: STEP_ASKS[step] });
-      draw(false);
-    };
-
-    draw(false);
-  },
-
-  // 第三问「重做」：同题重做一遍。本地判分、不记成绩——闭环仍按 D3/D7 走
-  renderSocraticRedo(body, q, rec, onDone) {
-    const opts = (q.options || []).map((o, i) => `<button class="option" data-idx="${i}">${o}</button>`).join('');
-    body.innerHTML = `
-      <div class="quiz-meta"><span class="muted">重做（不计成绩，验证刚才的思路）</span></div>
-      <div class="stem">${q.stem}</div>
-      ${q.options ? `<div class="options">${opts}</div>`
-        : '<input class="text-input" id="so-fill" placeholder="填答案">'}
-      <div class="quiz-actions"><button class="btn" id="so-redo-submit" disabled>提交重做</button><span class="muted" id="so-redo-hint"></span></div>
-      <div id="so-redo-result"></div>`;
-
-    let selected = [];
-    const submitBtn = body.querySelector('#so-redo-submit');
-    const hintEl = body.querySelector('#so-redo-hint');
-    const fillEl = body.querySelector('#so-fill');
-    const hasAnswer = () => {
-      if (q.type === 'multi' || q.type === 'single' || q.type === 'judge') return selected.length > 0;
-      if (q.type === 'fill') return fillEl ? fillEl.value.trim() !== '' : false;
-      return false;
-    };
-    const refreshSubmit = () => { submitBtn.disabled = !hasAnswer(); hintEl.textContent = ''; };
-    const options = body.querySelectorAll('.option');
-    if (q.type === 'multi') {
-      options.forEach(o => o.addEventListener('click', () => {
-        const idx = Number(o.dataset.idx);
-        selected = selected.includes(idx) ? selected.filter(i => i !== idx) : selected.concat(idx);
-        options.forEach(oo => oo.classList.toggle('selected', selected.includes(Number(oo.dataset.idx))));
-        refreshSubmit();
-      }));
-    } else if (options.length) {
-      options.forEach(o => o.addEventListener('click', () => {
-        selected = [Number(o.dataset.idx)];
-        options.forEach(oo => oo.classList.toggle('selected', Number(oo.dataset.idx) === selected[0]));
-        refreshSubmit();
-      }));
-    }
-
-    body.querySelector('#so-redo-submit').addEventListener('click', () => {
-      let answer = null;
-      if (q.type === 'multi') answer = selected;
-      else if (q.type === 'single' || q.type === 'judge') answer = selected[0];
-      else if (q.type === 'fill') answer = body.querySelector('#so-fill').value;
-      if (!hasAnswer()) { hintEl.textContent = '请先作答再提交'; return; }
-      const ok = Quiz.grade(q, answer);
-      const result = body.querySelector('#so-redo-result');
-      if (ok === true) {
-        result.innerHTML = `
-          <div class="result good">重做对了 ✅ 刚想通的那条路就是对的——3 天后悬赏重做再验一遍，过了就销号。</div>
-          <div class="quiz-actions"><button class="btn" id="so-understood">看懂了，继续</button></div>`;
-      } else {
-        result.innerHTML = `
-          <div class="result bad">还差点火候——对照完整解析，找准岔口在哪。</div>
-          <div class="muted" style="margin-top:8px"><strong>解析：</strong>${q.explanation || '（暂无解析）'}</div>
-          <div class="quiz-actions">
-            <button class="btn" id="so-understood">看懂了，继续</button>
-            <button class="btn secondary" id="so-ask" style="margin-left:8px">还是不懂，问${Assistant.name()}</button>
-          </div>
-          <div id="so-ask-slot"></div>`;
-        result.querySelector('#so-ask').addEventListener('click', () => {
-          result.querySelector('#so-understood').style.display = 'none';
-          this.renderAskPanel(result.querySelector('#so-ask-slot'), rec, q, onDone);
-        });
-      }
-      result.querySelector('#so-understood').addEventListener('click', onDone);
-    });
-    refreshSubmit();
-    if (fillEl) {
-      fillEl.focus();
-      fillEl.addEventListener('input', refreshSubmit);
-      fillEl.addEventListener('keydown', e => { if (e.key === 'Enter') submitBtn.click(); });
-    }
-  },
-
-  // ================= 问学长：答疑面板（练习中 / 悬赏榜 / 全局页共用） =================
+  // ================= 问爸爸：答疑面板（练习中 / 错题榜 / 全局页共用） =================
   // rec/q 传 null 即全局页的自由提问；对话只存内存、不落库，单题封顶 6 轮（设计文档 §2 §6 §7）
   renderAskPanel(zone, rec, q, onDone) {
     const history = [];
@@ -1782,13 +1906,14 @@ const App = {
       zone.innerHTML = `
         <div class="ask-panel">
           <div class="ask-head">
-            <strong>学长 ${Assistant.name()}</strong>
+            <strong>爸爸 ${Assistant.name()}</strong>
             <span class="muted">今日还能问 ${AI.quota().left} 次</span>
           </div>
           <div class="chat-log">
             ${history.map(t => `<div class="chat-bubble ${t.role === 'assistant' ? 'from-ai' : 'from-me'}">${esc(t.content)}</div>`).join('')}
-            ${thinking ? '<div class="chat-bubble from-ai chat-typing">学长在想……</div>' : ''}
+            ${thinking ? '<div class="chat-bubble from-ai chat-typing">爸爸在想……</div>' : ''}
           </div>
+          ${Speech.btnHTML('ask')}
           ${err ? `<div class="chat-err">${AI_MSG[err] || AI_MSG.http}</div>` : ''}
           <div class="chat-input-row">
             <input class="text-input" id="ask-input" autocomplete="off" placeholder="${full() ? '这题先聊到这，自己去写一遍' : '还想问什么？'}"${full() ? ' disabled' : ''}>
@@ -1812,6 +1937,7 @@ const App = {
       const expand = zone.querySelector('#ask-expand');
       if (expand) expand.addEventListener('click', () => send('展开讲，这道题给我完整解法'));
       zone.querySelectorAll('[data-ask]').forEach(b => b.addEventListener('click', () => send(b.dataset.ask)));
+      Speech.wire(zone, 'ask', () => history.filter(t => t.role === 'assistant').map(t => t.content).join(' '));
       // 「出道类似的」：有原题就现编一道同知识点同题型的变式并入库；没有原题只给引导
       zone.querySelector('[data-similar]').addEventListener('click', async () => {
         hintOffered = false;
@@ -1863,9 +1989,15 @@ const App = {
         history.push({ role: 'assistant', content: res.text });
         if (asHint) { hintActive = false; hintOffered = true; }
       } else {
-        history.pop();   // 失败不进上下文、不占轮次
-        rounds -= 1;
-        err = res.error;
+        // C2 降级再确认：AI 不可用时，本地证据仍能兜一段像样的回答（不占 AI 提问次数）
+        const local = Assistant.localAnswer(rec, q);
+        if (local) {
+          history.push({ role: 'assistant', content: local + '\n\n（爸爸现在没在线——这段是本地讲义兜底，不占提问次数。等他回来，再点「换个讲法」我接着讲。）' });
+        } else {
+          history.pop();   // 失败不进上下文、不占轮次
+          rounds -= 1;
+          err = res.error;
+        }
       }
       draw(false);
       // 失败后把那句话放回输入框：「再点一次试试」得真的点得到
@@ -1879,18 +2011,224 @@ const App = {
     draw(false);
   },
 
-  // 全局「问学长」页：复用同一套发送/渲染逻辑，只是没有预置错题
+  // 全局「问爸爸」弹窗（导航 / 悬浮头像统一入口）：不切页，关闭即回原页面
+  // 练习作答中点开：先弹一句拒绝，不给问；答完或其它页面才进正常问答
+  openDadModal() {
+    if (document.getElementById('dad-modal')) return; // 已开着就别叠第二层
+    const quizOpen = this.view === 'practice' && document.querySelector('#submit-btn'); // 答题页且未提交
+    const mask = document.createElement('div');
+    mask.className = 'dad-mask';
+    mask.id = 'dad-modal';
+    mask.innerHTML = `
+      <div class="dad-card">
+        <button class="guide-close" id="dad-modal-close" aria-label="关闭">×</button>
+        ${quizOpen ? '<div class="dad-refuse">抽你巴掌！没答先问？</div>' : '<div id="dad-modal-zone"></div>'}
+      </div>`;
+    document.body.appendChild(mask);
+    const close = () => mask.remove();
+    mask.querySelector('#dad-modal-close').addEventListener('click', close);
+    mask.addEventListener('click', e => { if (e.target === mask) close(); });
+    if (!quizOpen) this.renderAskPanel(mask.querySelector('#dad-modal-zone'), null, null, () => {});
+  },
+
+  // 全局「问爸爸」页：复用同一套发送/渲染逻辑，只是没有预置错题
   renderAssistant(el) {
     el.innerHTML = `
       <div class="card">
-        <h2>问学长</h2>
+        <h2>问爸爸</h2>
         <p class="muted">哪里卡住直接问。他会用你听得懂的话讲——不打官腔，不讲大道理。</p>
         <div id="ask-zone"></div>
       </div>`;
     this.renderAskPanel(el.querySelector('#ask-zone'), null, null, () => this.renderAssistant(el));
   },
 
-  // 周报 AI 评语（四铁律）+ 周度档案蒸馏（§9.5 §9.6）:放进报告页 #weekly-ai-slot
+  // 学习汇报页（独立入口）：周维度汇总 + AI 评语 + 打印一页纸；首次进入弹指引弹窗
+  renderBrief(el) {
+    const now = Date.now();
+    const showGuide = !Store.settings.briefSeen;
+    let html = `
+      <div class="card overview">
+        <h2>📊 学习汇报</h2>
+        <p class="muted">把练习数据翻译成家长看得懂的话：这周推进了什么、哪类题还在卡、下周主攻哪个点。随时可看，拉到最下面能打印一页纸带走。</p>
+      </div>`;
+    html += Report.battleCardHTML(now);
+    html += Report.weekCardHTML(now);
+    html += Report.weekNarrativeHTML(now);
+    html += Report.gradeCardHTML();
+    html += '<div id="weekly-ai-slot"></div>';
+    html += '<div class="session-actions"><button class="btn secondary" id="print-weekly">🖨 打印本周战报（给家长）</button><button class="btn secondary" id="print-wrongs">🖨 打印本周错题（未解决）</button></div>';
+    if (showGuide) html += this.briefGuideHTML();
+    el.innerHTML = html;
+    const pb = el.querySelector('#print-weekly');
+    if (pb) pb.addEventListener('click', () => Report.openPrintWeekly(now));
+    const pwb = el.querySelector('#print-wrongs');
+    if (pwb) pwb.addEventListener('click', () => Report.openPrintWrongs(now));
+    this.renderWeeklyAI(el.querySelector('#weekly-ai-slot'));
+    if (showGuide) this.wireBriefGuide(el);
+  },
+
+  // 成绩汇报页（独立入口）：录入最近一次考试/测验各科成绩 + 班级/年级排名，历史记录按日期留存
+  renderGradeReport(el) {
+    const records = this._gradeRecords();
+    el.innerHTML = `
+      <div class="card overview">
+        <h2>📈 成绩汇报</h2>
+        <p class="muted">把最近一次考试或测验的各科成绩、班级排名和年级排名记下来。录入后，学习汇报页会自动对比出每科的涨跌和排名变化。</p>
+      </div>
+      <div class="card">
+        <h2>添加记录</h2>
+        ${this.gradeFormHTML()}
+      </div>
+      <div class="card">
+        <h2>历史记录 <span class="muted">${records.length} 条</span></h2>
+        ${this.gradeHistoryHTML(records)}
+      </div>`;
+    this.bindGradeEntry(el, () => this.renderGradeReport(el));
+  },
+
+  // 成绩记录（按日期倒序，最新在前）
+  _gradeRecords() {
+    return (Store.gradeReports || []).slice()
+      .sort((a, b) => (a.date === b.date ? (b.createdAt || 0) - (a.createdAt || 0) : (a.date < b.date ? 1 : -1)));
+  },
+
+  // 成绩录入表单主体（日期 + 各科成绩 + 班级/年级排名 + 添加按钮）：成绩汇报页与「选择练习科目」卡片共用
+  gradeFormHTML() {
+    const subjects = Store.subjects.filter(x => !x.exam);
+    const today = Store.todayKey(Date.now());
+    return `
+      <div class="field"><label>日期</label><input class="text-input" type="date" id="gr-date" value="${today}"></div>
+      <div class="field"><label>各科成绩（0-100，没考的留空即可）</label>
+        ${subjects.map(s => `
+          <div class="field-row">
+            <label>${s.name}</label>
+            <input class="text-input" type="number" min="0" max="100" id="gr-score-${s.id}" placeholder="0-100">
+          </div>`).join('')}
+      </div>
+      <div class="field-row">
+        <label>班级排名</label>
+        <input class="text-input" type="number" min="1" id="gr-class-rank" placeholder="第几名">
+        <label>年级排名</label>
+        <input class="text-input" type="number" min="1" id="gr-grade-rank" placeholder="第几名">
+      </div>
+      <div class="session-actions"><button class="btn glow" id="gr-add">＋ 添加记录</button></div>`;
+  },
+
+  // 成绩历史记录主体（空态或表格）：与 gradeFormHTML 共用
+  gradeHistoryHTML(records) {
+    const subjects = Store.subjects.filter(x => !x.exam);
+    const list = records || this._gradeRecords();
+    const fmtScores = r => subjects
+      .filter(s => r.scores && r.scores[s.id] != null)
+      .map(s => `${s.name} ${r.scores[s.id]}`).join('、') || '<span class="muted">—</span>';
+    if (list.length === 0) return '<div class="empty">还没有记录。</div>';
+    return `<table><thead><tr><th>日期</th><th>各科成绩</th><th>班级</th><th>年级</th><th></th></tr></thead><tbody>
+      ${list.map(r => `<tr>
+        <td>${r.date}</td>
+        <td>${fmtScores(r)}</td>
+        <td>${r.classRank != null ? '第 ' + r.classRank + ' 名' : '<span class="muted">—</span>'}</td>
+        <td>${r.gradeRank != null ? '第 ' + r.gradeRank + ' 名' : '<span class="muted">—</span>'}</td>
+        <td><button class="btn danger small" data-del="${r.id}">删</button></td>
+      </tr>`).join('')}
+      </tbody></table>`;
+  },
+
+  // 绑定成绩录入表单：添加记录 / 删除记录，rerender 用于重渲染当前视图
+  bindGradeEntry(el, rerender) {
+    const subjects = Store.subjects.filter(x => !x.exam);
+    const addBtn = el.querySelector('#gr-add');
+    if (addBtn) addBtn.addEventListener('click', () => {
+      const date = el.querySelector('#gr-date').value;
+      if (!date) { alert('请填写日期'); return; }
+      const scores = {};
+      for (const s of subjects) {
+        const raw = el.querySelector('#gr-score-' + s.id).value.trim();
+        if (raw === '') continue;
+        const n = Number(raw);
+        if (!(n >= 0 && n <= 100)) { alert(`${s.name}成绩请输入 0~100`); return; }
+        scores[s.id] = Math.round(n);
+      }
+      const parseRank = v => {
+        const raw = v.trim();
+        if (raw === '') return null;
+        const n = Number(raw);
+        return (Number.isInteger(n) && n >= 1) ? n : NaN;
+      };
+      const classRank = parseRank(el.querySelector('#gr-class-rank').value);
+      const gradeRank = parseRank(el.querySelector('#gr-grade-rank').value);
+      if (Number.isNaN(classRank)) { alert('班级排名请输入正整数'); return; }
+      if (Number.isNaN(gradeRank)) { alert('年级排名请输入正整数'); return; }
+      if (Object.keys(scores).length === 0 && classRank == null && gradeRank == null) {
+        alert('至少填一科成绩或一个排名'); return;
+      }
+      const createdAt = Date.now();
+      const list = Store.gradeReports || [];
+      list.push({ id: 'gr-' + createdAt, date, scores, classRank, gradeRank, createdAt });
+      Store.gradeReports = list;
+      rerender();
+    });
+    el.querySelectorAll('[data-del]').forEach(btn => btn.addEventListener('click', () => {
+      if (!confirm('删除这条成绩记录？')) return;
+      Store.gradeReports = (Store.gradeReports || []).filter(r => r.id !== btn.dataset.del);
+      rerender();
+    }));
+  },
+
+  // 成绩录入弹窗：点「汇报成绩」弹出，录入/删除后就地刷新弹窗内容，不占主页版面
+  openGradeModal() {
+    if (document.getElementById('grade-modal')) return;
+    const mask = document.createElement('div');
+    mask.className = 'guide-mask';
+    mask.id = 'grade-modal';
+    mask.innerHTML = `<div class="guide-card grade-card">
+      <button class="guide-close" id="grade-modal-close" aria-label="关闭">×</button>
+      <div id="grade-modal-body"></div>
+    </div>`;
+    document.body.appendChild(mask);
+    const close = () => mask.remove();
+    mask.querySelector('#grade-modal-close').addEventListener('click', close);
+    mask.addEventListener('click', e => { if (e.target === mask) close(); });
+    const renderBody = () => {
+      const body = mask.querySelector('#grade-modal-body');
+      const records = this._gradeRecords();
+      body.innerHTML = `
+        <h2>📈 汇报成绩</h2>
+        <p class="muted">记录最近一次考试或测验的各科成绩、班级排名和年级排名。</p>
+        ${this.gradeFormHTML()}
+        <h2>历史记录 <span class="muted">${records.length} 条</span></h2>
+        ${this.gradeHistoryHTML(records)}`;
+      this.bindGradeEntry(body, renderBody);
+    };
+    renderBody();
+  },
+
+  // 学习汇报首次进入的指引弹窗（带选择 + 关闭）；看过一次即不再弹
+  briefGuideHTML() {
+    return `<div class="guide-mask" id="brief-guide">
+      <div class="guide-card">
+        <button class="guide-close" id="brief-guide-close" aria-label="关闭">×</button>
+        <h2>📊 学习汇报</h2>
+        <p class="muted">这是给家长看的专属页面：孩子这周的答题、正确率、点亮的知识点、还在卡的知识点，以及下周该攻哪里，都在这里。</p>
+        <p class="muted">数据来自每天的练习记录，随时可看；页面最下方可打印一页纸带走。</p>
+        <div class="guide-actions">
+          <button class="btn" id="brief-guide-go">⚔️ 去练习</button>
+          <button class="btn secondary" id="brief-guide-ok">知道了</button>
+        </div>
+      </div>
+    </div>`;
+  },
+
+  wireBriefGuide(el) {
+    const mask = el.querySelector('#brief-guide');
+    if (!mask) return;
+    const seen = () => { Store.settings = { ...Store.settings, briefSeen: true }; };
+    const close = () => { seen(); mask.remove(); };
+    el.querySelector('#brief-guide-close').addEventListener('click', close);
+    el.querySelector('#brief-guide-ok').addEventListener('click', close);
+    el.querySelector('#brief-guide-go').addEventListener('click', () => { seen(); this.show('practice'); });
+  },
+
+  // 周报 AI 评语（四铁律）+ 周度档案蒸馏（§9.5 §9.6）:放进学习汇报页 #weekly-ai-slot
   renderWeeklyAI(slot) {
     if (!slot) return;
     if (!AI.hasKey()) {
@@ -1997,7 +2335,43 @@ const App = {
     });
   },
 
+  renderGuide(el) {
+    el.innerHTML = `
+      <div class="card hero">
+        <h2>❓ 使用说明</h2>
+        <p class="muted">这是给初二同学和家长用的全科补习系统：做错的题帮你看懂，真正学会的题才算过——所有进度都存在这台设备里。</p>
+      </div>
+      <div class="card">
+        <h2>✨ 好在哪</h2>
+        <ul>
+          <li><strong>全科一个地方练</strong>：语数英、物理、历史、地理、生物、政治都在一起。</li>
+          <li><strong>做错不算完</strong>：先让你选「为什么错」，再配微课，把这道题真正吃透。</li>
+          <li><strong>学会才销号</strong>：错题隔几天重做，连续做对才从榜上销号，不糊弄自己。</li>
+          <li><strong>断网也能用</strong>：判对错、找错因、算掌握度全在本机跑，免费又稳定。</li>
+          <li><strong>家长看得懂</strong>：学习汇报把数据翻成人话，还能打印一页带走。</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h2>🚀 怎么用</h2>
+        <ol>
+          <li>点顶部「开始练习」，选一科，跟着关卡一题一题做。</li>
+          <li>做错了先选错因（概念／步骤／审题／计算），再看解析和微课。</li>
+          <li>卡住了，点右下角头像「问爸爸」，让它讲这道题。</li>
+          <li>想知道哪科弱看「知识树」；想给家长看进度点「学习汇报」。</li>
+          <li>错题都收在「错题榜」，隔几天重做，对了就销号。</li>
+        </ol>
+      </div>`;
+  },
+
   // ================= 设置 =================
+  // 云同步状态行文案（设置页）
+  _gistStatusText(s) {
+    if (!s.gistToken) return '尚未配置 Token';
+    if (!s.gistId) return '已填 Token，尚未建立云端备份';
+    const at = s.lastSyncedAt ? new Date(s.lastSyncedAt).toLocaleString() : '尚未';
+    return `已连接云端（gist ${String(s.gistId).slice(0, 7)}…），上次同步：${at}`;
+  },
+
   renderSettings(el) {
     const s = Store.settings;
     el.innerHTML = `
@@ -2008,7 +2382,6 @@ const App = {
         <div class="field"><label>模型名</label><input class="text-input" id="set-model" value="${s.aiModel || ''}"></div>
         <div class="field"><label>API Key（仅存本地）</label><input class="text-input" id="set-key" type="password" value="${s.aiKey || ''}" placeholder="sk-..."></div>
         <div class="field"><label>每日提问上限</label><input class="text-input" id="set-limit" type="number" min="1" value="${s.dailyAiLimit || AI.DEFAULT_LIMIT}"></div>
-        <div class="field"><label>会考日期（地理生物）</label><input class="text-input" id="set-exam" type="date" value="${s.examDate || Scheduler.DEFAULT_EXAM_DATE}"></div>
         <div class="field"><label>开学日期（教学日历锚点）</label><input class="text-input" id="set-term" type="date" value="${s.termStart || Scheduler.DEFAULT_TERM_START}"></div>
         <button class="btn" id="save-settings">保存</button>
         <button class="btn secondary" id="test-conn" style="margin-left:8px">测试连接</button>
@@ -2019,7 +2392,7 @@ const App = {
         <div class="field"><label>考试模式科目（计划只排这一科冲刺）</label>
           <select class="text-input" id="set-exam-mode">
             <option value="">关闭考试模式</option>
-            ${Store.subjects.map(x => `<option value="${x.id}"${s.examMode === x.id ? ' selected' : ''}>${x.name}${x.exam ? '（会考）' : ''}</option>`).join('')}
+            ${Store.subjects.map(x => `<option value="${x.id}"${s.examMode === x.id ? ' selected' : ''}>${x.name}</option>`).join('')}
           </select>
         </div>
         <div class="field"><label>大考校准：录入实考分后按差距微调掌握度（±15 封顶）</label>
@@ -2032,6 +2405,14 @@ const App = {
         </div>
       </div>
       <div class="card">
+        <h2>🔍 学情记忆审计（系统记住了什么）</h2>
+        <p class="muted">以下全是本地规则算出来的，不联网、不上云：掌握度 = 正确率 × 用时 × 指数遗忘；错因 = 他自己选的归因；销号 = D0→D3→D7 走完的记录。界面显示的掌握度还会按遗忘曲线衰减。</p>
+        <div id="audit-body"></div>
+        <div class="session-actions">
+          <button class="btn secondary" id="export-audit">📤 导出学情记忆（JSON）</button>
+        </div>
+      </div>
+      <div class="card">
         <h2>数据备份</h2>
         <p class="muted">进度全部存在这台设备的浏览器里。换设备、清缓存之前，先导出一份；在新设备上导入即可恢复。建议每周导一次。</p>
         <div class="session-actions">
@@ -2041,12 +2422,66 @@ const App = {
         </div>
       </div>
       <div class="card">
+        <h2>☁️ 云同步（GitHub Gist）</h2>
+        <p class="muted">答题后自动把全部进度备份到一个私有 Gist，换设备、清缓存后填同一个 Token 打开页面即自动恢复。Token 只存这台设备的浏览器里。获取方式：GitHub → Settings → Developer settings → Personal access tokens (classic) → Generate new token，只勾 gist 权限即可。</p>
+        <div class="field"><label>Token（仅存本机）</label><input class="text-input" id="set-gist-token" type="password" value="${s.gistToken || ''}" placeholder="ghp_..."></div>
+        <div class="session-actions">
+          <button class="btn" id="gist-save">保存并同步</button>
+          ${s.gistToken && s.gistId ? '<button class="btn secondary" id="gist-sync" style="margin-left:8px">立即同步</button>' : ''}
+        </div>
+        <p class="muted" id="gist-status">${this._gistStatusText(s)}</p>
+      </div>
+      <div class="card">
         <h2>危险区</h2>
         <p class="muted">重置后清空所有作答记录与掌握度，恢复初始数据。</p>
         <button class="btn danger" id="reset-data">重置数据</button>
       </div>`;
 
     this.renderBank(el.querySelector('#bank-card'));
+
+    // 学情记忆审计（A4）：只读渲染 + 导出子集
+    const renderAudit = () => {
+      const body = el.querySelector('#audit-body');
+      if (!body) return;
+      const a = Report.memoryAudit();
+      const li = items => items.length ? items.map(i => `<li>${i}</li>`).join('') : '<li class="muted">暂无记录。</li>';
+      const causeRows = a.causes.length
+        ? a.causes.map(c => `<li><strong>${c.key}</strong> ×${c.count} —— ${c.kps.join('、')}</li>`).join('')
+        : '<li class="muted">还没记过错因——答错时先自选归因，系统就会在这里累计。</li>';
+      const closureRows = a.recentClosures.length
+        ? a.recentClosures.map(c => `<li>${c.name}（${c.at}）</li>`).join('')
+        : '<li class="muted">还没有销号记录——D0→D3→D7 全过才销号。</li>';
+      const weakRows = a.weak.length
+        ? a.weak.map(w => `<li><strong>${w.name}</strong> ${w.score}/100</li>`).join('')
+        : '<li class="muted">暂无薄弱点记录。</li>';
+      body.innerHTML = `
+        <div class="audit-sec"><p class="muted">错因清单</p><ul>${causeRows}</ul></div>
+        <div class="audit-sec"><p class="muted">销号记录（${a.closedCount} 条）</p><ul>${closureRows}</ul></div>
+        <div class="audit-sec"><p class="muted">掌握度来源：${a.masteryCount} 个知识点有记录 · ${a.litCount} 个已点亮（≥85）· 累计作答 ${a.attemptsCount} 次 · 本地微课 ${a.lessonCount} 个课叶</p>
+        <p class="muted">薄弱点 Top${Math.min(5, Math.max(1, a.weak.length))}：</p><ul>${weakRows}</ul></div>`;
+    };
+    renderAudit();
+    const exportAudit = el.querySelector('#export-audit');
+    if (exportAudit) exportAudit.addEventListener('click', () => {
+      const a = Report.memoryAudit();
+      const payload = {
+        exportedAt: a.exportedAt,
+        memory: {
+          attempts: Store.attempts,
+          mastery: Store.mastery,
+          wrongbook: Store.wrongbook,
+          lessonState: Store.lessonState || {},
+        },
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const d = new Date();
+      const url = URL.createObjectURL(blob);
+      const dl = document.createElement('a');
+      dl.href = url;
+      dl.download = 'tutor-memory-' + d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0') + '.json';
+      dl.click();
+      URL.revokeObjectURL(url);
+    });
 
     const saveSettings = () => {
       Store.settings = {
@@ -2055,10 +2490,12 @@ const App = {
         aiModel: el.querySelector('#set-model').value.trim(),
         aiKey: el.querySelector('#set-key').value.trim(),
         dailyAiLimit: Number(el.querySelector('#set-limit').value) || AI.DEFAULT_LIMIT,
-        examDate: el.querySelector('#set-exam').value || '',
         termStart: el.querySelector('#set-term').value || '',
       };
     };
+
+    // API Key 填一次即自动保存（失焦时触发），其余字段仍走「保存」按钮
+    el.querySelector('#set-key').addEventListener('change', saveSettings);
 
     el.querySelector('#save-settings').addEventListener('click', () => {
       saveSettings();
@@ -2134,6 +2571,38 @@ const App = {
       reader.readAsText(file);
     });
 
+    // 云同步（GitHub Gist）：保存 Token 即首次同步；此后答题自动防抖上传
+    const syncMsg = (r) => ({
+      restored: '已从云端恢复进度，页面即将刷新',
+      uploaded: '本地较新，已上传到云端',
+      latest: '云端与本地一致，无需同步',
+      created: '已在云端创建私有备份',
+    }[r.action] || '同步完成');
+    el.querySelector('#gist-save').addEventListener('click', async () => {
+      const input = el.querySelector('#set-gist-token');
+      const token = input.value.trim();
+      if (!token) { alert('请先填写 Token（GitHub → Settings → Developer settings → Tokens classic，勾选 gist）'); return; }
+      const btn = el.querySelector('#gist-save');
+      Store.settings = { ...Store.settings, gistToken: token };
+      btn.disabled = true;
+      btn.textContent = '同步中…';
+      const res = await Sync.sync();
+      btn.disabled = false;
+      btn.textContent = '保存并同步';
+      if (res.ok) { alert(syncMsg(res)); this.show('settings'); }
+      else alert(res.error);
+    });
+    const gistSync = el.querySelector('#gist-sync');
+    if (gistSync) gistSync.addEventListener('click', async () => {
+      gistSync.disabled = true;
+      gistSync.textContent = '同步中…';
+      const res = await Sync.sync();
+      gistSync.disabled = false;
+      gistSync.textContent = '立即同步';
+      if (res.ok) { alert(syncMsg(res)); this.show('settings'); }
+      else alert(res.error);
+    });
+
     el.querySelector('#reset-data').addEventListener('click', () => {
       if (confirm('确定重置所有数据？')) {
         this.session = null;
@@ -2175,7 +2644,7 @@ const App = {
     let editing = draft || null;
     if (!editing && this.bankEditId === 'new') {
       editing = { knowledgePointId: kps[0] ? kps[0].id : '', type: 'single', stem: '', options: ['', '', '', ''], answer: 0,
-        explanation: '', difficulty: 2, expectedTime: 30, groupId: '', groupRole: 'basic' };
+        explanation: '', difficulty: 2, expectedTime: expectedTimeOf('single', 2), groupId: '', groupRole: 'basic' };
     } else if (!editing && this.bankEditId) {
       editing = Store.questionIndex()[this.bankEditId] || null;
       if (!editing) this.bankEditId = null;
@@ -2234,11 +2703,11 @@ const App = {
     const listHtml = qs.length === 0
       ? '<p class="empty">这个科目还没有题目</p>'
       : qs.map(q => `
-          <div style="display:flex;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line,#eee)">
+          <div class="bank-row" style="display:flex;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line,#eee)">
             <span class="badge">${TYPE_LABEL[q.type] || q.type}</span>
             ${q.id.startsWith('c-') ? '<span class="badge">自</span>' : ''}
-            <span style="flex:1;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this.bankEsc(q.stem)}</span>
-            <span class="muted" style="font-size:12px;white-space:nowrap">${this.bankKpPath(Store.kpIndex()[q.knowledgePointId] || {})}</span>
+            <span class="bank-stem" style="flex:1;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this.bankEsc(q.stem)}</span>
+            <span class="muted bank-kp-path" style="font-size:12px;white-space:nowrap">${this.bankKpPath(Store.kpIndex()[q.knowledgePointId] || {})}</span>
             <button class="btn secondary" data-edit-q="${q.id}" style="padding:4px 10px">编辑</button>
             <button class="btn danger" data-del-q="${q.id}" style="padding:4px 10px">删除</button>
           </div>`).join('');
@@ -2311,6 +2780,14 @@ const App = {
       } else if (!cur.options || cur.options.length < 2) {
         cur.options = ['', '', '', '']; cur.answer = 0;
       }
+      cur.expectedTime = expectedTimeOf(cur.type, cur.difficulty);
+      this.renderBank(card, cur);
+    });
+    const diffSel = card.querySelector('#bank-diff');
+    if (diffSel) diffSel.addEventListener('change', () => {
+      const cur = this.bankCollect(card);
+      cur.difficulty = Number(diffSel.value);
+      cur.expectedTime = expectedTimeOf(cur.type, cur.difficulty);
       this.renderBank(card, cur);
     });
     const addOpt = card.querySelector('#bank-add-opt');

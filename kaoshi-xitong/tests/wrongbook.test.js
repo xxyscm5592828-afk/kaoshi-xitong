@@ -167,6 +167,34 @@ test('变式兜底：同知识点无同型题时 allowAnyType 放宽到任意题
   assert.equal(Wrongbook.variantQuestionFor(rec10, true), null);
 });
 
+test('变式分层：不跳级——同层优先，无同层则给更低层而非拔高题', () => {
+  mockLS._d = {};
+  const seed = {
+    seedVersion: 2,
+    subjects: [{ id: 'math', name: '数学' }],
+    knowledgePoints: [
+      { id: 'kpA', subjectId: 'math', parentId: null, name: '同层优先', order: 1, level: 4, weight: 3, prerequisites: [] },
+      { id: 'kpB', subjectId: 'math', parentId: null, name: '宁降层不跳级', order: 2, level: 4, weight: 3, prerequisites: [] },
+    ],
+    questions: [
+      { id: 'a0', subjectId: 'math', knowledgePointId: 'kpA', type: 'single', stem: '原题', options: ['a', 'b'], answer: 0, explanation: '', difficulty: 3, expectedTime: 40, groupId: '', groupRole: 'basic' },
+      { id: 'a3', subjectId: 'math', knowledgePointId: 'kpA', type: 'single', stem: '同层', options: ['a', 'b'], answer: 0, explanation: '', difficulty: 3, expectedTime: 40, groupId: '', groupRole: 'basic' },
+      { id: 'a5', subjectId: 'math', knowledgePointId: 'kpA', type: 'single', stem: '拔高', options: ['a', 'b'], answer: 0, explanation: '', difficulty: 5, expectedTime: 60, groupId: '', groupRole: 'basic' },
+      { id: 'b0', subjectId: 'math', knowledgePointId: 'kpB', type: 'single', stem: '原题', options: ['a', 'b'], answer: 0, explanation: '', difficulty: 3, expectedTime: 40, groupId: '', groupRole: 'basic' },
+      { id: 'b1', subjectId: 'math', knowledgePointId: 'kpB', type: 'single', stem: '低层', options: ['a', 'b'], answer: 0, explanation: '', difficulty: 1, expectedTime: 30, groupId: '', groupRole: 'basic' },
+      { id: 'b5', subjectId: 'math', knowledgePointId: 'kpB', type: 'single', stem: '拔高', options: ['a', 'b'], answer: 0, explanation: '', difficulty: 5, expectedTime: 60, groupId: '', groupRole: 'basic' },
+    ],
+    lessons: {}, settings: {},
+  };
+  Store.init(seed);
+  // kpA：原题 diff3，池有同层 diff3 与拔高 diff5 → 取同层 a3，不取 a5
+  const recA = Wrongbook.onWrong(seed.questions[0], 1, T0);
+  assert.equal(Wrongbook.variantQuestionFor(recA).id, 'a3');
+  // kpB：原题 diff3，池有 diff1 与 diff5 → 取 ≤ 原题最接近的 b1，不给拔高 b5
+  const recB = Wrongbook.onWrong(seed.questions[3], 1, T0);
+  assert.equal(Wrongbook.variantQuestionFor(recB).id, 'b1');
+});
+
 test('升级阶梯：reappearCount=2 触发溯源，=3 回炉；顽固状态直接回炉', () => {
   fresh();
   const rec = Wrongbook.onWrong(Q1, 1, T0);

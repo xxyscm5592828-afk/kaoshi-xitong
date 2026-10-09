@@ -36,24 +36,30 @@ const Store = {
     this._write('schemaVersion', SCHEMA_VERSION);
   },
 
-  // 初始化 / 数据结构变更时重建（seedVersion 不一致即重置）
+  // 初始化：题库按 seedVersion 增量合并（新种子为基底，保留用户自建题），进度数据不清空
+  // （初三题库扩容后老用户无痛升级：只补题库，attempts/mastery/wrongbook 等全部保留）
   init(seed) {
     this._migrate();
-    if (this._read('seedVersion', 0) === (seed.seedVersion || 0)) return;
+    const newVer = seed.seedVersion || 0;
+    if (this._read('seedVersion', -1) === newVer) return;
     this._write('subjects', seed.subjects);
     this._write('knowledgePoints', seed.knowledgePoints);
-    this._write('questions', seed.questions);
+    const seedQIds = new Set(seed.questions.map(q => q.id));
+    const custom = this._read('questions', []).filter(q => !seedQIds.has(q.id));
+    this._write('questions', seed.questions.concat(custom));
     this._write('lessons', seed.lessons || {});
-    this._write('attempts', []);
-    this._write('mastery', {});
-    this._write('wrongbook', []);
-    this._write('lessonState', {});
-    this._write('dayStats', {});
-    this._write('solutionCache', {});
-    this._write('placement', { done: {}, active: null });
-    const s = seed.settings || {};
-    this._write('settings', s);
-    this._write('seedVersion', seed.seedVersion || 0);
+    this._write('seedVersion', newVer);
+    // 仅首次使用才初始化进度（老用户升级题库时 attempts 已存在，跳过）
+    if (this._read('attempts', null) === null) {
+      this._write('attempts', []);
+      this._write('mastery', {});
+      this._write('wrongbook', []);
+      this._write('lessonState', {});
+      this._write('dayStats', {});
+      this._write('solutionCache', {});
+      this._write('placement', { done: {}, active: null });
+      this._write('settings', seed.settings || {});
+    }
   },
 
   reset(seed) {

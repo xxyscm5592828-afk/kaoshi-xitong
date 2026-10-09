@@ -8,7 +8,7 @@ const path = require('node:path');
 
 global.alert = () => {}; // 空作答/空复述的拦截提示，测试里只断言不放行
 
-const mockLS = { _d: {}, getItem(k) { return this._d[k] ?? null; }, setItem(k, v) { this._d[k] = String(v); }, removeItem(k) { delete this._d[k]; } };
+const mockLS = { _d: {}, get length() { return Object.keys(this._d).length; }, key(i) { return Object.keys(this._d)[i] ?? null; }, getItem(k) { return this._d[k] ?? null; }, setItem(k, v) { this._d[k] = String(v); }, removeItem(k) { delete this._d[k]; } };
 
 // 最小 DOM stub：querySelector 缓存（事件绑定与触发同一对象）、错因/选项按钮可缓存查询
 class FakeEl {

@@ -1138,13 +1138,19 @@ th { color: var(--muted); font-weight: 600; font-size: 13px; }
   pointer-events: none; /* 关键：不拦截「下一题」等点击 */
   animation: sidePraiseIn 0.42s cubic-bezier(0.2, 1.4, 0.45, 1);
 }
-.side-praise-avatar { display: block; width: 72px; height: 72px; margin: 0 auto 6px; object-fit: contain; }
+.side-praise-avatar { display: block; width: 72px; height: 72px; margin: 0 auto 6px; object-fit: contain; border-radius: 14px; }
 .side-praise-text { font-size: 13px; font-weight: 700; line-height: 1.45; }
 .side-praise.out { animation: sidePraiseOut 0.32s ease forwards; }
 @keyframes sidePraiseIn { from { opacity: 0; transform: translateX(-120%) scale(0.9); } to { opacity: 1; transform: none; } }
 @keyframes sidePraiseOut { to { opacity: 0; transform: translateX(-120%) scale(0.9); } }
+/* 右侧探出：单人出现在右边 / 双人的右位 */
+.side-praise.right { left: auto; right: 12px; animation: sidePraiseInRight 0.42s cubic-bezier(0.2, 1.4, 0.45, 1); }
+.side-praise.right.out { animation: sidePraiseOutRight 0.32s ease forwards; }
+@keyframes sidePraiseInRight { from { opacity: 0; transform: translateX(120%) scale(0.9); } to { opacity: 1; transform: none; } }
+@keyframes sidePraiseOutRight { to { opacity: 0; transform: translateX(120%) scale(0.9); } }
 @media (max-width: 600px) {
   .side-praise { width: 104px; left: 6px; top: 28%; padding: 8px; }
+  .side-praise.right { right: 6px; }
   .side-praise-avatar { width: 54px; height: 54px; }
   .side-praise-text { font-size: 12px; }
 }

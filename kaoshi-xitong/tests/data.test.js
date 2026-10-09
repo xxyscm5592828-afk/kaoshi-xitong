@@ -9,13 +9,19 @@ const JS = path.join(__dirname, '..', 'js');
 const DATA_FILES = [
   'data.js',
   'data-math8b.js',
+  'data-math9.js',
   'data-chinese.js',
+  'data-chinese9.js',
   'data-english.js',
+  'data-english9.js',
   'data-physics.js',
+  'data-physics9.js',
   'data-history.js',
+  'data-history9.js',
   'data-geography.js',
   'data-biology.js',
   'data-politics.js',
+  'data-politics9.js',
 ];
 
 function loadData() {

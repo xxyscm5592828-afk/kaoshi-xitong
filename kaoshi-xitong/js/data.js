@@ -1,7 +1,7 @@
 // 阶段 1 学科数据：数学·八上（人教版）；其余科目见 data-<subject>.js（本文件须最先加载）
 // 章节框架对照开发文档附录 A.2；章节名以课本目录为准（待最终核对，见文档 §15）
 // 题目为手写示例题：每叶 2~3 道，含 expectedTime（用时诊断关键字段）
-const SEED_VERSION = 10;
+const SEED_VERSION = 11; // v11：新增九年级六科题库（增量合并，不清进度）
 
 const SUBJECTS = [
   { id: 'chinese', name: '语文', textbook: '人教版', exam: false },

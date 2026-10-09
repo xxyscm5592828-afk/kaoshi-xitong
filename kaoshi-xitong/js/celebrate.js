@@ -7,13 +7,30 @@ const Celebrate = {
   _last: 0,
   _ctx: null,
 
-  SIDE_TTL: 1800, // 侧边「妈妈旁边表扬」无操作自动淡出
-  SIDE_LINES: [
+  SIDE_TTL: 1800, // 侧边「爸妈旁边表扬」无操作自动淡出
+  // 侧边表扬：形象、话术、出场的人（妈妈 / 爸爸 / 双人）、左右方向均随机
+  MOM_AVATARS: ['assets/mom-praise.png', 'assets/mom-1.png', 'assets/mom-2.png', 'assets/mom-3.png'],
+  DAD_AVATARS: ['assets/dad-1.png', 'assets/dad-2.png'],
+  MOM_LINES: [
     '这题稳！妈妈在旁边看着呢 😄',
     '又对了，妈妈的小骄傲 💛',
     '漂亮！思路很顺 👏',
     '对了对了，妈妈给你比个心 💗',
     '真棒，越做越稳 ✨',
+    '妈妈看到啦，答得又快又准 👍',
+    '这道题拿下！继续冲 💪',
+    '太给力了，妈妈都惊到啦 😲',
+    '不错不错，保持这个手感 🔥',
+  ],
+  DAD_LINES: [
+    '不错！爸爸看了都点头 👍',
+    '这题解得漂亮，爸爸服气 😎',
+    '稳！爸爸给你竖个大拇指 💪',
+    '行啊，这波操作很硬核 🔥',
+    '牛！爸爸小时候可没这么快 🚀',
+    '答对了！爸爸给你记一功 ⭐',
+    '可以啊，这才是真本事 💥',
+    '厉害，爸爸给你鼓掌 👏',
   ],
 
   // 表扬一次：礼炮纸屑 + 中央点赞卡 +（默认）庆典音效
@@ -42,19 +59,45 @@ const Celebrate = {
     if (timer && typeof timer.unref === 'function') timer.unref();
   },
 
-  // 侧边「妈妈旁边表扬」：每答对一题从屏幕侧边探出头来表扬一句；
+  // 侧边「爸妈旁边表扬」：每答对一题从屏幕侧边探出头来表扬一句；
   // 非阻塞（pointer-events:none）、自动淡出、连对时替换旧的（不堆积），不影响点「下一题」
+  // 出场的人（妈妈 / 爸爸 / 双人）、形象、话术、左右位置均随机
   sidePraise(opts) {
     if (typeof document === 'undefined' || !document.body) return; // 测试 / 无 DOM 环境跳过
     const o = opts || {};
-    const lines = this.SIDE_LINES;
-    const text = o.text || lines[Math.floor(Math.random() * lines.length)];
-    const old = document.getElementById('side-praise');
-    if (old && old.remove) old.remove(); // 连对：替换上一个，避免浮层堆积
+    this._clearSide(); // 连对：先清掉上一轮浮层，避免堆积
+    if (o.text) { this._showSide('side-praise', 'left', 'mom', o.text); return; } // 显式指定文案：固定左侧妈妈
+    const pick = (list) => list[Math.floor(Math.random() * list.length)];
+    if (Math.random() < 0.25) { // 双人：左右各站一位，谁在左谁在右随机
+      const dadLeft = Math.random() < 0.5;
+      this._showSide('side-praise-l', 'left', dadLeft ? 'dad' : 'mom', pick(dadLeft ? this.DAD_LINES : this.MOM_LINES));
+      this._showSide('side-praise-r', 'right', dadLeft ? 'mom' : 'dad', pick(dadLeft ? this.MOM_LINES : this.DAD_LINES));
+      return;
+    }
+    const who = Math.random() < 0.7 ? 'mom' : 'dad'; // 单人：妈妈多一些，左 / 右随机
+    this._showSide('side-praise', Math.random() < 0.5 ? 'left' : 'right', who, pick(who === 'dad' ? this.DAD_LINES : this.MOM_LINES));
+  },
+
+  // 清除侧边表扬浮层（单人 / 双人共用，避免连对时堆积）
+  _clearSide() {
+    ['side-praise', 'side-praise-l', 'side-praise-r'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el && el.remove) el.remove();
+    });
+  },
+
+  // 渲染一个侧边表扬浮层：side=left|right，who=mom|dad
+  _showSide(id, side, who, text) {
+    const isDad = who === 'dad';
+    const pool = isDad ? this.DAD_AVATARS : this.MOM_AVATARS;
+    const avatar = pool[Math.floor(Math.random() * pool.length)];
     const box = document.createElement('div');
-    box.id = 'side-praise';
-    box.className = 'side-praise';
-    box.innerHTML = `<img class="side-praise-avatar" src="assets/mom-praise.png" alt="妈妈">
+    box.id = id;
+    box.className = 'side-praise' + (side === 'right' ? ' right' : '');
+    // 图片缺失时兜底，避免出现破图
+    const fallback = isDad ? 'assets/dad-1.png' : 'assets/mom-praise.png';
+    box.innerHTML = `<img class="side-praise-avatar" src="${avatar}" alt="${isDad ? '爸爸' : '妈妈'}"
+      onerror="this.onerror=null;this.src='${fallback}'">
       <div class="side-praise-text">${text}</div>`;
     document.body.appendChild(box);
     const timer = setTimeout(() => {

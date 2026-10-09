@@ -313,7 +313,7 @@ test('重置：Store.reset 清空全部 tutor.* 键（含阶段3键），非本�
   for (let i = 0; i < mockLS.length; i++) left.push(mockLS.key(i));
   assert.deepEqual(left.filter(k => k.startsWith('tutor.')).sort(),
     ['tutor.attempts', 'tutor.dayStats', 'tutor.knowledgePoints', 'tutor.lessonState', 'tutor.lessons',
-     'tutor.mastery', 'tutor.placement', 'tutor.questions', 'tutor.seedVersion', 'tutor.settings', 'tutor.solutionCache', 'tutor.subjects', 'tutor.wrongbook'],
+     'tutor.mastery', 'tutor.placement', 'tutor.questions', 'tutor.schemaVersion', 'tutor.seedVersion', 'tutor.settings', 'tutor.solutionCache', 'tutor.subjects', 'tutor.wrongbook'],
     '重置后不应残留 activeSubjectId/examScores/facts/planProgress/seasons');
   assert.equal(mockLS.getItem('other.app'), 'keep', '非本应用键不应被删');
   assert.equal(Store.activeSubjectId, '');

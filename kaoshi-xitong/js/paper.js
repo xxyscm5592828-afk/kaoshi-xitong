@@ -2,7 +2,7 @@
 // 入口在「学习工具」目录；打印复用 Report.openPrint + #print-area 的 .pr-doc 打印样式
 const Paper = {
   // 出卷配置（内存态）：subjectId 为空表示综合（跨全部科目）
-  state: { subjectId: '', source: 'weak', count: 12, withAnswer: false },
+  state: { subjectId: '', source: 'weak', count: 12, withAnswer: false, _recording: false },
   _items: [], // 当前这批抽中的题目（打印与预览共用同一批）
 
   TYPE_NAME: { single: '单选', judge: '判断', multi: '多选', fill: '填空', subjective: '主观' },
@@ -156,9 +156,11 @@ const Paper = {
         <div class="session-actions">
           <button class="btn" id="paper-print">🖨️ 打印这份卷子</button>
           <button class="btn secondary" id="paper-reroll">🔄 换一批</button>
+          <button class="btn secondary" id="paper-record">📝 做完了？录错题</button>
         </div>
         <p class="muted">本次：${subjName} · ${srcName} · ${this._items.length} 题${this._items.length === 0 ? '（暂无可用题目，换个范围或题源试试）' : ''}</p>
         <div class="paper-list">${list}</div>
+        ${st._recording ? this._recordHTML() : ''}
       </div>`;
 
     el.querySelector('#paper-back').addEventListener('click', back);
@@ -168,5 +170,39 @@ const Paper = {
     el.querySelector('#paper-ans').addEventListener('change', e => { st.withAnswer = e.target.checked; });
     el.querySelector('#paper-print').addEventListener('click', () => this.print());
     el.querySelector('#paper-reroll').addEventListener('click', () => this.render(el, back));
+    const recBtn = el.querySelector('#paper-record');
+    if (recBtn) recBtn.addEventListener('click', () => { st._recording = !st._recording; this.render(el, back); });
+    this._bindRecord(el, back);
+  },
+
+  // 纸卷回录：孩子做完纸质卷，把做错的题勾上 → 进入错题本走销号闭环（D0 起点，与线上答错同待遇）
+  _recordHTML() {
+    const rows = this._items.map((q, i) => `<label class="paper-check"><input type="checkbox" data-rec="${i}"> ${i + 1}. ${kpName(q.knowledgePointId)}（${this.TYPE_NAME[q.type] || q.type}）</label>`).join('');
+    return `<div class="field" style="margin-top:14px"><label>📝 纸卷回录（勾选做错的题）</label>
+      <p class="muted" style="margin:4px 0 8px">对完答案后，把孩子做错的题勾上，录入错题本——照常走「自选错因 → 重做 → 变式」销号流程。</p>
+      ${rows}
+      <div class="session-actions">
+        <button class="btn" id="paper-rec-save">✓ 录入错题本</button>
+        <button class="btn secondary" id="paper-rec-cancel">收起</button>
+      </div>
+    </div>`;
+  },
+
+  _bindRecord(el, back) {
+    const save = el.querySelector('#paper-rec-save');
+    if (!save) return;
+    save.addEventListener('click', () => {
+      const idxs = Array.from(el.querySelectorAll('[data-rec]:checked')).map(c => Number(c.dataset.rec));
+      if (!idxs.length) { alert('没勾任何题——要是全对了就直接收起，厉害！'); return; }
+      const now = Date.now();
+      for (const i of idxs) {
+        const q = this._items[i];
+        if (q) Wrongbook.onWrong(q, '（纸卷作答）', now);
+      }
+      this.state._recording = false;
+      alert(`已录入 ${idxs.length} 道错题，去「错题榜」继续处理吧。`);
+      this.render(el, back);
+    });
+    el.querySelector('#paper-rec-cancel').addEventListener('click', () => { this.state._recording = false; this.render(el, back); });
   },
 };

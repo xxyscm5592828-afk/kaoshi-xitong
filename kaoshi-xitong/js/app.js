@@ -775,6 +775,21 @@ const App = {
     if (hb) hb.addEventListener('click', () => this.show('brief'));
     const hg = el.querySelector('#home-grade');
     if (hg) hg.addEventListener('click', () => this.show('grade'));
+    this._renderBackupBanner(el);
+  },
+
+  // 备份提醒条（主页顶部）：未配云同步 + 有练习数据 + 超过 7 天没导出备份时显示
+  // 数据只存在浏览器 localStorage 里（约 5MB），清缓存即丢——低频提醒，备份后自动消失
+  _renderBackupBanner(el) {
+    if (typeof Sync !== 'undefined' && Sync.configured()) return; // 已有云同步（异地有备份），不打扰
+    if (!Store.attempts.length) return; // 还没练过题，没什么可丢的
+    const last = Store.settings.lastBackupAt || 0;
+    const days = 7;
+    if (last && Date.now() - last < days * 86400000) return; // 7 天内备份过
+    const how = last ? `距上次备份已经 ${Math.floor((Date.now() - last) / 86400000)} 天` : '还没备份过';
+    el.insertAdjacentHTML('afterbegin', `<div class="due-banner">💾 ${how}——学习数据只存在这台浏览器里，去导出一份备份防丢。<button class="btn secondary small" id="go-backup">去备份</button></div>`);
+    const btn = el.querySelector('#go-backup');
+    if (btn) btn.addEventListener('click', () => this.show('settings'));
   },
 
   // 主页状态带（首行细条）：问候 + 考试模式冲刺 + 本周习惯 + 免死金牌
@@ -1713,7 +1728,7 @@ const App = {
           <button class="btn" id="report-btn2">看看今天的知识树</button>
         </div>
       </div>
-      ${this.nextTargetCardHTML(Date.now(), '')}`;
+      ${this.nextTargetCardHTML(Date.now(), (this.activeSubject() || {}).id || '')}`;
     el.querySelector('#report-btn2').addEventListener('click', () => this.show('report'));
     this.wireNextTarget(el);
   },
@@ -2592,9 +2607,10 @@ const App = {
     const imp = scope.querySelector('#import-data');
     const file = scope.querySelector('#import-file');
     if (!exp || !imp || !file) return;
-    // 导出：下载 JSON 备份文件
+    // 导出：下载 JSON 备份文件（同时记备份时间，供首页备份提醒判定）
     exp.addEventListener('click', () => {
       const payload = Store.exportData();
+      Store.settings = { ...Store.settings, lastBackupAt: Date.now() };
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
       const a = document.createElement('a');
       const d = new Date();

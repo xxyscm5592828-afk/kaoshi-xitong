@@ -1,6 +1,15 @@
 // 数据层：所有持久化数据统一经由此处读写 localStorage（唯一存储入口）
 const STORE_PREFIX = 'tutor.';
 
+// localStorage 数据结构版本：结构变更时 +1 并在 MIGRATIONS 里补一条迁移（只追加不改历史）
+const SCHEMA_VERSION = 1;
+const SCHEMA_MIGRATIONS = {
+  // v0→v1：旧默认助手名「阿K」/「学长」统一改为「爸爸」（原 init 内联逻辑迁移框架化）
+  1(s) {
+    if (s && (s.assistantName === '阿K' || s.assistantName === '学长')) this._write('settings', { ...s, assistantName: '爸爸' });
+  },
+};
+
 const Store = {
   _read(key, def) {
     try {
@@ -16,11 +25,20 @@ const Store = {
     if (typeof Sync !== 'undefined' && !Sync._busy) Sync.autoPush(); // 云同步：有变更即防抖上传
   },
 
+  // 结构迁移：schemaVersion 落后则按序补跑迁移，跑完写新版本号（幂等，启动时一次）
+  _migrate() {
+    const cur = this._read('schemaVersion', 0);
+    if (cur >= SCHEMA_VERSION) return;
+    for (let v = cur + 1; v <= SCHEMA_VERSION; v++) {
+      const fn = SCHEMA_MIGRATIONS[v];
+      if (fn) fn.call(this, this._read('settings', null));
+    }
+    this._write('schemaVersion', SCHEMA_VERSION);
+  },
+
   // 初始化 / 数据结构变更时重建（seedVersion 不一致即重置）
   init(seed) {
-    // 迁移：旧默认助手名「阿K」/「学长」→「爸爸」（不重置学习数据）
-    const cur = this._read('settings', null);
-    if (cur && (cur.assistantName === '阿K' || cur.assistantName === '学长')) this._write('settings', { ...cur, assistantName: '爸爸' });
+    this._migrate();
     if (this._read('seedVersion', 0) === (seed.seedVersion || 0)) return;
     this._write('subjects', seed.subjects);
     this._write('knowledgePoints', seed.knowledgePoints);

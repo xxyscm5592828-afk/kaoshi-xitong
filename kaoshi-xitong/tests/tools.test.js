@@ -38,12 +38,12 @@ const SEED = {
   settings: {},
 };
 
-test('目录含七类工具，归属对应科目', () => {
+test('目录含八类工具，归属对应科目', () => {
   mockLS._d = {};
   Store.init({ ...SEED });
-  assert.equal(Tools.CATALOG.length, 7);
+  assert.equal(Tools.CATALOG.length, 8);
   const tools = Tools.CATALOG.map(t => t.tool).sort();
-  assert.deepEqual(tools, ['biology-animal', 'china-map', 'chinese-reading', 'english-tense', 'physics-formula', 'timeline', 'world-map']);
+  assert.deepEqual(tools, ['biology-animal', 'china-map', 'chinese-reading', 'english-tense', 'paper', 'physics-formula', 'timeline', 'world-map']);
   const bySubject = (id) => Tools.CATALOG.filter(t => t.subjectId === id).length;
   assert.equal(bySubject('history'), 1);
   assert.equal(bySubject('geography'), 2);

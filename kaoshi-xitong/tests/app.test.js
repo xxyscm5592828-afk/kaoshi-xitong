@@ -52,6 +52,7 @@ class FakeEl {
   }
   click(t) { const fn = this.listeners[t]; if (fn) fn(); }
   focus() {}
+  scrollIntoView() {} // app.js 结算/讲解卡有平滑滚动调用，桩掉即可
 }
 
 let fetchImpl = () => Promise.resolve({
@@ -108,6 +109,10 @@ function fresh(settings, seedOverrides) {
   // 默认模拟已摸底的老用户：主页渲染测试不受摸底引导分支影响（摸底逻辑由 placement.test.js 单测）
   const defSid = (Store.subjects.find(s => s.default) || Store.subjects[0] || {}).id;
   Store.placement = { done: defSid ? { [defSid]: true } : {}, active: null };
+  // 默认模拟「学到哪儿」已登记（rootId 取首个 L4 叶，范围内照常出题）：直通车/今日待办相关测试走正常分支
+  Store.unitScope = defSid ? { [defSid]: { bookId: 'kp1', chapterId: '', sectionId: '' } } : {};
+  // 同 App.init：无活跃科目时落到默认科（收工页直通车按活跃科目出卡）
+  if (!Store.activeSubjectId && defSid) Store.activeSubjectId = defSid;
   Store.wrongbook = [makeRec()];
   App.stage = { type: 'breakthrough' };
   App.session = null;
@@ -349,7 +354,7 @@ const TWO_SUBJ_SEED = {
 
 test('nextTargetCardHTML：有可攻知识点 → 渲染直通车卡（含 #next-target-btn 与 data-kp）', () => {
   fresh();
-  const html = App.nextTargetCardHTML(Date.now(), '');
+  const html = App.nextTargetCardHTML(Date.now(), 'math');
   assert.ok(html.includes('下一个该攻'), '应给出「下一个该攻」');
   assert.ok(html.includes('一次函数图象'), '应带知识点名');
   assert.ok(html.includes('data-kp="kp1"'), '按钮应带知识点 id');

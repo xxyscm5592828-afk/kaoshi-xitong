@@ -159,6 +159,10 @@ const Assistant = {
     ].join('\n');
   },
 
+  // AI 生成文本入库前转义：页面渲染走 innerHTML，数学里常见的「x < 5」若不转义会被浏览器当标签吞掉炸排版
+  // （种子题目全是纯文本、零 HTML 依赖，故入库统一转义安全；判分用的填空/主观 answer 不转义，保证与用户输入原样比对）
+  _esc(v) { return String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); },
+
   // 从模型返回文本里抠出 JSON（容忍 ```json 围栏 / 前后缀说明文字）
   _extractJSON(text) {
     const s = String(text || '').trim();
@@ -201,15 +205,16 @@ const Assistant = {
     const o = this._extractJSON(text);
     if (!o || typeof o !== 'object') return { ok: false };
     const s = v => (typeof v === 'string' ? v.trim() : '');
+    const e = v => this._esc(s(v)); // 入库前转义（见 _esc 注释）
     const lesson = {
-      oneLiner: s(o.oneLiner), problem: s(o.problem), analogy: s(o.analogy), example: s(o.example),
-      pitfalls: Array.isArray(o.pitfalls) ? o.pitfalls.map(x => s(x)).filter(Boolean).slice(0, 5) : [],
+      oneLiner: e(o.oneLiner), problem: e(o.problem), analogy: e(o.analogy), example: e(o.example),
+      pitfalls: Array.isArray(o.pitfalls) ? o.pitfalls.map(x => e(x)).filter(Boolean).slice(0, 5) : [],
       check: Array.isArray(o.check) ? o.check.map(c => {
         if (!c || typeof c.stem !== 'string' || !c.stem.trim()) return null;
-        const opts = Array.isArray(c.options) ? c.options.map(x => s(x)).filter(Boolean) : [];
+        const opts = Array.isArray(c.options) ? c.options.map(x => e(x)).filter(Boolean) : [];
         const ans = Number(c.answer);
         if (opts.length < 2 || !Number.isInteger(ans) || ans < 0 || ans >= opts.length) return null;
-        return { stem: c.stem.trim(), options: opts, answer: ans, explanation: s(c.explanation) };
+        return { stem: e(c.stem), options: opts, answer: ans, explanation: e(c.explanation) };
       }).filter(Boolean).slice(0, 2) : [],
     };
     if (!lesson.oneLiner || !lesson.problem || !lesson.analogy || !lesson.example || lesson.check.length === 0)
@@ -263,7 +268,7 @@ const Assistant = {
   _parseVariantObj(o, original) {
     if (!o || typeof o !== 'object' || Array.isArray(o)) return { ok: false };
     const s = v => (typeof v === 'string' ? v.trim() : '');
-    const stem = s(o.stem), explanation = s(o.explanation);
+    const stem = this._esc(s(o.stem)), explanation = this._esc(s(o.explanation)); // 展示字段入库前转义（见 _esc 注释）
     if (!stem || !explanation) return { ok: false };
     // B1 难度校准：采用模型给的 difficulty，但钳制在 1~5 且与原题相差 ≤1（出题难度=原题±1），越界回落原题难度
     const origD = Number.isInteger(original.difficulty) && original.difficulty >= 1 && original.difficulty <= 5 ? original.difficulty : 2;
@@ -271,7 +276,7 @@ const Assistant = {
     const difficulty = Number.isInteger(d) && d >= 1 && d <= 5 && Math.abs(d - origD) <= 1 ? d : origD;
     const q = { type: original.type, stem, explanation, difficulty, expectedTime: original.expectedTime || 40 };
     if (original.type === 'single' || original.type === 'multi') {
-      const opts = Array.isArray(o.options) ? o.options.map(x => s(x)).filter(Boolean) : [];
+      const opts = Array.isArray(o.options) ? o.options.map(x => this._esc(s(x))).filter(Boolean) : [];
       if (opts.length < 2) return { ok: false };
       q.options = opts;
       if (original.type === 'single') {

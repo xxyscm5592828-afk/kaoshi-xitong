@@ -707,12 +707,22 @@ const App = {
       <div class="session-actions">
         <button class="btn secondary" id="home-brief">📊 学习汇报（给家长看）</button>
         <button class="btn secondary" id="home-grade">📈 成绩汇报</button>
+      </div>
+      <div class="card backup-card">
+        <h2>💾 数据备份（换设备用）</h2>
+        <p class="muted">进度只存在这台设备的浏览器里。换手机、清缓存之前点「导出」存一份，新设备上「导入」这份文件就能接着练。</p>
+        <div class="session-actions" style="margin-top:12px">
+          <button class="btn glow" id="export-data">📤 导出备份</button>
+          <button class="btn secondary" id="import-data">📥 导入备份</button>
+          <input type="file" id="import-file" accept="application/json,.json" style="display:none">
+        </div>
       </div>`;
     this.bindSubjectBar(el, () => this.renderPractice(el));
     this.bindUnitBar(el, sid, () => this.renderPractice(el));
     const gradeOpen = el.querySelector('#grade-open');
     if (gradeOpen) gradeOpen.addEventListener('click', () => this.openGradeModal());
     this.wireTodo(el);
+    this.wireBackup(el);
     // 回炉卡点击即开练该弱点（焦点练习）
     el.querySelectorAll('[data-reheat]').forEach(btn =>
       btn.addEventListener('click', () => this.startFocus(btn.dataset.reheat, el)));
@@ -2386,7 +2396,7 @@ const App = {
         <button class="btn" id="save-settings">保存</button>
         <button class="btn secondary" id="test-conn" style="margin-left:8px">测试连接</button>
       </div>
-      <div class="card" id="bank-card"></div>
+      <details class="card" id="bank-card"></details>
       <div class="card">
         <h2>🏃 考试模式 & 大考校准</h2>
         <div class="field"><label>考试模式科目（计划只排这一科冲刺）</label>
@@ -2535,41 +2545,8 @@ const App = {
       });
     });
 
-    // 导出：下载 JSON 备份文件
-    el.querySelector('#export-data').addEventListener('click', () => {
-      const payload = Store.exportData();
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-      const a = document.createElement('a');
-      const d = new Date();
-      a.href = URL.createObjectURL(blob);
-      a.download = 'tutor-backup-'
-        + d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0')
-        + '.json';
-      a.click();
-      URL.revokeObjectURL(a.href);
-    });
-
-    // 导入：选文件 → 确认 → 覆盖恢复 → 刷新
-    el.querySelector('#import-data').addEventListener('click', () => el.querySelector('#import-file').click());
-    el.querySelector('#import-file').addEventListener('change', (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = () => {
-        let payload;
-        try { payload = JSON.parse(reader.result); }
-        catch (err) { alert('这不是合法的备份文件'); return; }
-        if (!confirm('导入会覆盖当前全部进度，确定继续？')) return;
-        const res = Store.importData(payload);
-        if (res.ok) {
-          alert('已恢复 ' + res.count + ' 项数据，页面即将刷新');
-          location.reload();
-        } else {
-          alert(res.error);
-        }
-      };
-      reader.readAsText(file);
-    });
+    // 数据备份：导出/导入（主页与设置页共用同一套 id，绑定逻辑见 wireBackup）
+    this.wireBackup(el);
 
     // 云同步（GitHub Gist）：保存 Token 即首次同步；此后答题自动防抖上传
     const syncMsg = (r) => ({
@@ -2610,6 +2587,48 @@ const App = {
         Store.reset(SEED);
         this.show('practice');
       }
+    });
+  },
+
+  // 数据备份：导出下载 JSON / 导入覆盖恢复（设置页与主页共用同一份 DOM 结构）
+  wireBackup(scope) {
+    const exp = scope.querySelector('#export-data');
+    const imp = scope.querySelector('#import-data');
+    const file = scope.querySelector('#import-file');
+    if (!exp || !imp || !file) return;
+    // 导出：下载 JSON 备份文件
+    exp.addEventListener('click', () => {
+      const payload = Store.exportData();
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      const d = new Date();
+      a.href = URL.createObjectURL(blob);
+      a.download = 'tutor-backup-'
+        + d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0')
+        + '.json';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    });
+    // 导入：选文件 → 确认 → 覆盖恢复 → 刷新
+    imp.addEventListener('click', () => file.click());
+    file.addEventListener('change', (e) => {
+      const f = e.target.files[0];
+      if (!f) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        let payload;
+        try { payload = JSON.parse(reader.result); }
+        catch (err) { alert('这不是合法的备份文件'); return; }
+        if (!confirm('导入会覆盖当前全部进度，确定继续？')) return;
+        const res = Store.importData(payload);
+        if (res.ok) {
+          alert('已恢复 ' + res.count + ' 项数据，页面即将刷新');
+          location.reload();
+        } else {
+          alert(res.error);
+        }
+      };
+      reader.readAsText(f);
     });
   },
 
@@ -2713,7 +2732,7 @@ const App = {
           </div>`).join('');
 
     card.innerHTML = `
-      <h2>题库管理</h2>
+      <summary><h2>📚 题库管理</h2></summary>
       <p class="muted">录入自己的题目进练习流（错题重做、变式检测一起生效）。自定义题可编辑可删除，种子题编辑后同样生效。</p>
       <div class="field"><label>科目</label>
         <select class="text-input" id="bank-subject">${Store.subjects.map(s =>

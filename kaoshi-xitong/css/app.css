@@ -104,6 +104,17 @@ body {
 .card h2 { margin: 0 0 16px; font-size: 18px; }
 .card h3 { margin: 16px 0 8px; font-size: 15px; }
 
+/* 可折叠卡片（details）：默认收起，点标题展开，收起时只留一行标题 */
+.card > summary { cursor: pointer; list-style: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.card > summary::-webkit-details-marker { display: none; }
+.card > summary h2 { margin: 0; }
+.card > summary::after { content: '▾'; color: var(--muted); font-size: 14px; transition: transform 0.2s; }
+.card[open] > summary { margin-bottom: 14px; }
+.card[open] > summary::after { transform: rotate(180deg); }
+
+/* 主页「数据备份」入口：琥珀色描边高亮，换设备前一眼能找到 */
+.card.backup-card { border-color: rgba(245, 158, 11, 0.55); background: linear-gradient(180deg, rgba(245, 158, 11, 0.09), var(--card)); }
+
 .muted { color: var(--muted); font-size: 13px; }
 .up { color: var(--good); }
 .down { color: var(--bad); }

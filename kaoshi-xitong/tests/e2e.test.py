@@ -316,6 +316,7 @@ def run():
         dialogs = []
         page.on("dialog", lambda d: (dialogs.append(d.message), d.accept()))
         page.click('.nav-btn[data-view="settings"]')
+        page.click("#bank-card > summary")  # 题库管理默认折叠，先展开再操作
         page.wait_for_selector("#bank-card #bank-new")
         check("题库管理卡渲染（科目选择+新增按钮）", page.locator("#bank-subject").count() == 1)
         # 切到地理科：科目筛选生效（只列地理题，知识点下拉只列地理 L4）

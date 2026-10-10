@@ -63,9 +63,9 @@ const Mastery = {
   },
 
   // 摸底设定：不做增量更新，直接按实测设定初始掌握度（替代 default() 的 50 分「未知」）
-  // 对且快（用时≤一半预期）=80 / 对=75 / 错=25；错<30 → priority() 剔出刷题池走回炉重学路径（有意设计）
+  // 对且快（用时≤一半预期）=80 / 对=75；错且慢（真不会）=25 走回炉，错且快（疑似手滑/乱猜）=45 留池继续验
   applyPlacement(correct, fast, now) {
-    const score = correct ? (fast ? 80 : 75) : 25;
+    const score = correct ? (fast ? 80 : 75) : (fast ? 45 : 25);
     return {
       score,
       lastReviewAt: now,

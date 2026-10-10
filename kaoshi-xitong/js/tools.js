@@ -13,6 +13,8 @@ const Tools = {
     { subjectId: 'physics', icon: '🧮', title: '物理公式单位卡', desc: '速度/密度/压强/浮力/功/功率，公式+单位一卡记', tool: 'physics-formula' },
     { subjectId: 'biology', icon: '🐾', title: '动物类群进化图', desc: '从腔肠到哺乳，动物主要类群由低等到高等的演化阶梯', tool: 'biology-animal' },
     { subjectId: '', icon: '📝', title: '出一份练习卷', desc: '按弱项 / 错题 / 随机抽题，生成一份可打印的纸质练习卷（各科或综合）', tool: 'paper' },
+    { subjectId: 'chinese', icon: '✍️', title: '作文拍照评分', desc: '拍下写完的作文，AI 按中考标准打分，告诉你亮点和提分方向', tool: 'essay' },
+    { subjectId: '', icon: '🔬', title: '学课摸底分析测试', desc: '每科约 20 题、12~15 分钟，分层抽样测全科，出五维分析报告（掌握/认知/熟练度/错误结构/回炉建议）', tool: 'diagnostic' },
   ],
 
   // 通用辅助：KP 存在则返回 data-kp 属性；否则空

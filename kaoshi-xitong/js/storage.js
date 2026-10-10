@@ -58,6 +58,7 @@ const Store = {
       this._write('dayStats', {});
       this._write('solutionCache', {});
       this._write('placement', { done: {}, active: null });
+      this._write('diagnosticReports', {});
       this._write('settings', seed.settings || {});
     }
   },
@@ -106,6 +107,10 @@ const Store = {
   get monthly() { return this._read('monthly', []); },
   // 入学摸底：done 为 { [subjectId]: true }；active 为进行中状态（刷新可续）
   get placement() { return this._read('placement', { done: {}, active: null }); },
+  // 学课摸底分析测试：留档最近一次单科分析报告 { [subjectId]: profile }
+  get diagnosticReports() { return this._read('diagnosticReports', {}); },
+  // 背诵默写打卡：{ [dateKey]: { items: { qid: { ok, at } } } }
+  get recite() { return this._read('recite', {}); },
 
   set mastery(v) { this._write('mastery', v); },
   set activeSubjectId(v) { this._write('activeSubjectId', v); },
@@ -126,6 +131,8 @@ const Store = {
   set gradeReports(v) { this._write('gradeReports', v); },
   set monthly(v) { this._write('monthly', v); },
   set placement(v) { this._write('placement', v); },
+  set diagnosticReports(v) { this._write('diagnosticReports', v); },
+  set recite(v) { this._write('recite', v); },
 
   // 知识点索引：{ id → 节点 }
   kpIndex() {

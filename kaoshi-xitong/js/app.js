@@ -155,6 +155,7 @@ const App = {
       btn.classList.toggle('active', btn.dataset.view === view);
     });
     if (view === 'tools') this._toolDetail = null; // 从导航进工具页一律回目录
+    this._flow = null; // 切视图即放弃进行中的诊断分析态（摸底/诊断答题流）
     const dadFab = document.getElementById('dad-fab');
     if (dadFab) dadFab.classList.toggle('hidden', view === 'assistant'); // 已在该页则收起悬浮框
     const backFab = document.getElementById('back-fab');
@@ -329,9 +330,10 @@ const App = {
   },
 
   // ================= 学习页：诊断 → 微课 → 例题精讲 → 学完就练 =================
-  // 辅导主入口（从知识树点进来）：先看清现状，再学（微课/例题），学完就练一组专项
-  openLearn(kpId) {
+  // 辅导主入口（知识树点进来 / 练习页回炉卡点进来）：先看清现状，再学（微课/例题），学完就练一组专项
+  openLearn(kpId, from) {
     this.learnKpId = kpId;
+    this.learnFrom = from || 'tree'; // 来源：'tree'=知识树，'practice'=练习页回炉卡（决定返回落点）
     this.show('learn');
   },
 
@@ -360,7 +362,7 @@ const App = {
       <div class="card learn-hero">
         <div class="learn-head">
           <h2>${tier.icon} ${kp.name}</h2>
-          <button class="btn secondary small" id="back-report">← 回知识树</button>
+          <button class="btn secondary small" id="back-report">${this.learnFrom === 'practice' ? '← 回练习' : '← 回知识树'}</button>
         </div>
         <div class="muted">${subj ? subj.name : ''} · ${this.bankKpPath(kp)}</div>
         <div class="exp-bar big"><div class="exp-fill" style="width:${Math.round(eff)}%"></div></div>
@@ -397,7 +399,8 @@ const App = {
         </div>
       </div>`;
 
-    el.querySelector('#back-report').addEventListener('click', () => this.show('report'));
+    el.querySelector('#back-report').addEventListener('click', () =>
+      this.learnFrom === 'practice' ? this.back() : this.show('report'));
     el.querySelectorAll('[data-reveal]').forEach(btn => {
       btn.addEventListener('click', () => {
         const box = el.querySelector('#explain-' + btn.dataset.reveal);
@@ -515,25 +518,26 @@ const App = {
   },
 
   renderPlacementQuestion(el) {
+    const E = this._flow === 'diagnostic' ? Placement.diag : Placement; // 诊断分析 / 入学摸底共用答题流
     const fab = document.getElementById('dad-fab');
     if (fab) fab.classList.add('hidden'); // 答题页收起悬浮球，别挡题干和选项
-    const q = Placement.current();
-    if (!q) return this.renderPlacementEnd(el, Placement.finish());
+    const q = E.current();
+    if (!q) return this.renderPlacementEnd(el, E.finish());
     this.startAt = Date.now();
     this.answered = false;
-    const { pos, total } = Placement.progress();
+    const { pos, total } = E.progress();
     const typeLabel = { single: '单选', multi: '多选', fill: '填空', judge: '判断' }[q.type];
     let body = '';
     if (q.type === 'single' || q.type === 'judge' || q.type === 'multi') {
       body = `<div class="options" id="options">` + q.options.map((opt, i) =>
         `<button class="option" data-idx="${i}">${opt}</button>`).join('') + `</div>`;
     } else {
-      body = `<input class="fill-input" id="fill-answer" placeholder="输入答案" autocomplete="off">`;
+      body = `<input class="fill-input" id="fill-answer" placeholder="输入答案" autocomplete="off">` + this.fillKeypadHTML();
     }
     el.innerHTML = `
       <div class="card quiz">
         <div class="quiz-top">
-          <span class="stage-badge">入学摸底</span>
+          <span class="stage-badge">${this._flow === 'diagnostic' ? '学课摸底' : '入学摸底'}</span>
           <span class="muted">第 ${pos}/${total} 题 · ${typeLabel} · 难度 ${'★'.repeat(q.difficulty)}</span>
           <button class="btn secondary small" id="placement-quit" style="margin-left:auto">退出</button>
         </div>
@@ -587,18 +591,27 @@ const App = {
       fill.focus();
       fill.addEventListener('input', refresh);
       fill.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
+      this.bindFillKeypad(el, fill);
     }
     el.querySelector('#placement-quit').addEventListener('click', () => {
+      if (this._flow === 'diagnostic') {
+        if (!confirm('退出分析测试？本次进度将作废。')) return;
+        this._flow = null;
+        this._toolDetail = null;
+        this.renderTools(el);
+        return;
+      }
       if (!confirm('退出摸底？进度会保留，下次进来从这一题继续。')) return;
       this.renderPractice(el);
     });
   },
 
   submitPlacement(q, answer, el) {
+    const E = this._flow === 'diagnostic' ? Placement.diag : Placement;
     const actualTime = (Date.now() - this.startAt) / 1000;
     const correct = Quiz.grade(q, answer) === true;
     this.answered = true;
-    Placement.record(q, correct, actualTime, Date.now());
+    E.record(q, correct, actualTime, Date.now());
     // 揭晓：对 → 直接下一题；错 → 给答案和解析（摸底是这些点的第一次讲解）
     let correctText = '';
     if (q.type === 'single' || q.type === 'judge' || q.type === 'multi') {
@@ -627,22 +640,101 @@ const App = {
   },
 
   renderPlacementEnd(el, summary) {
+    if (this._flow === 'diagnostic') {
+      if (!summary) return this.renderTools(el);
+      return this.renderDiagReport(el, summary);
+    }
     if (!summary) return this.renderPractice(el);
     const idx = Store.kpIndex();
-    const weak = summary.weakKps.map(id => (idx[id] ? idx[id].name : '')).filter(Boolean);
+    // 只有「答错又慢」的低分点才当弱点回炉（与回炉卡同口径）；答错快的疑似手滑，留池再验
+    const weak = summary.weakKps
+      .filter(id => ((Store.mastery[id] || {}).score || 0) < 30)
+      .map(id => (idx[id] ? idx[id].name : '')).filter(Boolean);
+    const slips = summary.weakKps.length - weak.length;
     el.innerHTML = `
       <div class="card hero">
         <h2>🧭 摸底完成：${summary.correctCount}/${summary.total} 题通过</h2>
         <p class="muted">系统对你的起点有数了，今天的计划已经按实测水平安排。</p>
         ${weak.length ? `
           <p style="margin-top:8px"><strong>已标记不稳的点：</strong>${weak.join('、')}</p>
-          <p class="muted">这些点不会硬塞给你刷题——系统会先带你回炉看微课，学完自测通过再进练习。</p>` : `
+          <p class="muted">这些点不会硬塞给你刷题——系统会先带你回炉看微课，学完自测通过再进练习。</p>` : slips ? `
+          <p style="margin-top:8px">有 ${slips} 道像是手滑或粗心——先留在练习里再验一验，不急着当弱点补。</p>` : `
           <p style="margin-top:8px">基础探针全过，系统会从更高一点的难度开始安排。</p>`}
         <div class="session-actions">
           <button class="btn big glow" id="placement-done">好，开始今天的练习</button>
         </div>
       </div>`;
     el.querySelector('#placement-done').addEventListener('click', () => this.renderPractice(el));
+  },
+
+  // ================= 学课摸底分析测试（学习工具入口）=================
+  // 选科页：各科上次分析留档 + 历史报告入口
+  renderDiagPicker(el) {
+    const reports = Store.diagnosticReports || {};
+    const subjects = Store.subjects;
+    const historyIds = Object.keys(reports).filter(id => subjects.some(s => s.id === id));
+    el.innerHTML = `
+      <div class="card hero">
+        <h2>🔬 学课摸底分析测试</h2>
+        <p class="muted">每科约 20 题、12~15 分钟，分层抽样覆盖全科各章、不同认知层级。做完出详细分析报告：掌握水平、认知强弱、错误结构、回炉清单，还有给家长的话。</p>
+      </div>
+      <div class="tool-grid">
+        ${subjects.map(s => {
+          const r = reports[s.id];
+          return `<button class="tool-card" data-diag="${s.id}">
+            <div class="tool-icon">${s.exam ? '📗' : '📘'}</div>
+            <div class="tool-name">${s.name}</div>
+            <div class="tool-desc">${r ? `上次分析：${r.rating.label} · 掌握度 ${r.mastery.score}` : '尚未做过分析测试'}</div>
+            <div class="tool-subject">${s.exam ? '会考科目' : '约 20 题 · 12~15 分钟'}</div>
+          </button>`;
+        }).join('')}
+      </div>
+      ${historyIds.length ? `
+      <div class="card">
+        <h2>📚 历史报告</h2>
+        <div class="session-actions">
+          ${historyIds.map(id => `<button class="btn secondary" data-diagnostic-history="${id}">${(subjects.find(s => s.id === id) || {}).name || id}</button>`).join('')}
+        </div>
+      </div>` : ''}`;
+    el.querySelectorAll('[data-diag]').forEach(btn => {
+      btn.addEventListener('click', () => this.startDiagnostic(btn.dataset.diag, el));
+    });
+    el.querySelectorAll('[data-diagnostic-history]').forEach(btn => {
+      btn.addEventListener('click', () => this.renderDiagReportView(el, reports[btn.dataset.diagnosticHistory]));
+    });
+  },
+
+  startDiagnostic(sid, el) {
+    if (!Placement.diag.build(sid)) {
+      Ui.popup('暂无可测的题', '这门课的题库还没覆盖到位，先直接练吧。', 'cool');
+      return;
+    }
+    this._flow = 'diagnostic';
+    this.renderPlacementQuestion(el);
+  },
+
+  // 刚测完：算画像 + 留档最近一次 + 渲染
+  renderDiagReport(el, summary) {
+    const profile = Analysis.profile(summary.subjectId, summary.results, Date.now());
+    const reports = Store.diagnosticReports;
+    reports[summary.subjectId] = profile;
+    Store.diagnosticReports = reports;
+    this._flow = null;
+    this.renderDiagReportView(el, profile);
+  },
+
+  // 报告展示（新测与历史共用）
+  renderDiagReportView(el, profile) {
+    el.innerHTML = Report.diagnosticHTML(profile);
+    const pb = el.querySelector('#diag-print');
+    if (pb) pb.addEventListener('click', () => Report.openPrintDiagnostic(profile));
+    const rb = el.querySelector('#diag-retest');
+    if (rb) rb.addEventListener('click', () => { this._toolDetail = 'diagnostic'; this.renderDiagPicker(el); });
+    const bb = el.querySelector('#diag-back');
+    if (bb) bb.addEventListener('click', () => { this._toolDetail = null; this.renderTools(el); });
+    el.querySelectorAll('[data-kp]').forEach(node => {
+      node.addEventListener('click', () => this.openLearn(node.dataset.kp));
+    });
   },
 
   // ================= 练习：开工 =================
@@ -680,25 +772,36 @@ const App = {
     // 放松小游戏（阶段 3 §10.5：奖励性收尾，数据回流掌握度/复习队列）；周末彩蛋家长挑战
     const isWeekend = [0, 6].includes(new Date(now).getDay());
     const dueWords = Games.flashDue(now).length;
+    // 今日排班日型（家长排的：日常短练 / 假期长练 / 休息），决定今日任务量
+    const dayType = Scheduler.dayTypeOf(now);
+    const dayPlan = Scheduler.dayPlanOf(now);
+    const dayLabels = { daily: `📅 日常练习 · 约 ${dayPlan.minutes * 2} 分钟`, holiday: '🌴 假期练习 · 约 60 分钟', rest: '🛌 休息日' };
     el.innerHTML = `
       ${this.statusStripHTML(now, habit, blocks)}
+      ${this.comboCardHTML(now)}
+      ${dayType === 'rest' ? `
       <div class="card hero plan-card">
-        <h2>📋 今日计划，点一块直接开练</h2>
+        <h2>🛌 今天休息</h2>
+        <p class="muted">家长给你排了休息日——不安排任务，让脑子放空。手痒想练也可以去下面自己挑一科。</p>
+      </div>` : `
+      <div class="card hero plan-card">
+        <h2>📋 今日计划（${dayLabels[dayType]}），点一块直接开练</h2>
         <div class="plan-grid">
           ${blocks.map((b, i) => `
             <button class="plan-block mode-${modeCls[b.mode] || 'break'}${i === 0 ? ' primary' : ''}" id="${i === 0 ? 'start-session' : ''}" data-plan="${b.subjectId}">
               <span class="plan-tag">${modeIcon[b.mode] || '⚔️'} ${b.mode}</span>
               <span class="plan-subject">${subjName(b.subjectId)}</span>
               <span class="plan-reasons">${b.reasons.join(' · ')}</span>
-              <span class="plan-count">${b.count} 题 · 约 15 分钟（含讲解）${this.planDone.includes(b.subjectId) ? ' · ✅ 已完成' : ''}</span>
+              <span class="plan-count">${b.count} 题 · 约 ${Math.round(b.count * 2.5)} 分钟（含讲解）${this.planDone.includes(b.subjectId) ? ' · ✅ 已完成' : ''}</span>
             </button>`).join('')}
         </div>
         <div class="session-actions">
           ${blocks.length ? '<button class="btn big glow" id="start-now">▶ 点我开工</button>' : ''}
-          ${blocks.length === 0 ? '<button class="btn big glow" id="start-session-fallback">开整（6 题一组，含讲解约 15 分钟）</button>' : ''}
+          ${blocks.length === 0 ? `<button class="btn big glow" id="start-session-fallback">开整（${dayPlan.perBlock} 题一组，含讲解约 ${dayPlan.minutes} 分钟）</button>` : ''}
           <button class="btn secondary" id="reroll-plan">🔄 换个组合</button>
         </div>
-      </div>
+      </div>`}
+      ${this.scheduleWeekHTML(now)}
       ${this.todayTodoHTML(now, sid)}
       ${this.reheatCardHTML(sid)}
       ${this.scopePickerHTML(sid)}
@@ -723,6 +826,7 @@ const App = {
           <button class="btn secondary" id="game-flash">📚 单词快闪</button>
           ${dueWords > 0 ? `<button class="btn secondary" id="game-flash-review">🔁 单词复习（${dueWords} 个到期）</button>` : ''}
           ${isWeekend ? `<button class="btn secondary" id="parent-challenge">👨‍👦 家长挑战（周末彩蛋）</button>` : ''}
+          <button class="btn secondary" id="bgm-toggle">🎵 背景音乐（${Sound.music().on ? '开' : '关'}）</button>
         </div>
       </div>`;
     this.bindSubjectBar(el, () => this.renderPractice(el));
@@ -731,14 +835,14 @@ const App = {
     if (gradeOpen) gradeOpen.addEventListener('click', () => this.openGradeModal());
     this.wireTodo(el);
     this.wireBackup(el);
-    // 回炉卡点击即开练该弱点（焦点练习）
+    // 回炉卡点击先走学习页（诊断→微课→例题），学完自测通过再开练——与卡片文案一致
     el.querySelectorAll('[data-reheat]').forEach(btn =>
-      btn.addEventListener('click', () => this.startFocus(btn.dataset.reheat, el)));
+      btn.addEventListener('click', () => this.openLearn(btn.dataset.reheat, 'practice')));
     // 计划卡点击即开工；首块同时是页面主行动入口（#start-session，E2E/习惯锚点）
     el.querySelectorAll('[data-plan]').forEach(btn => {
       btn.addEventListener('click', () => {
         Store.activeSubjectId = btn.dataset.plan;
-        this.session = Quiz.planSession(Date.now());
+        this.session = this.planDailySession(Date.now());
         this.renderStage(el);
       });
     });
@@ -746,13 +850,16 @@ const App = {
     const startNow = el.querySelector('#start-now');
     if (startNow) startNow.addEventListener('click', () => {
       Store.activeSubjectId = blocks[0].subjectId;
-      this.session = Quiz.planSession(Date.now());
+      this.session = this.planDailySession(Date.now());
       this.renderStage(el);
     });
+    // 30 分钟套餐一键开始：按 练习 → 背诵快打 → 微课 顺序推进
+    const comboBtn = el.querySelector('#combo-start');
+    if (comboBtn) comboBtn.addEventListener('click', () => this.comboStart(el));
     // 兜底开工按钮（仅无计划时存在；独立 id，避免与计划卡的 #start-session 撞车）
     const fallback = el.querySelector('#start-session-fallback');
     if (fallback) fallback.addEventListener('click', () => {
-      this.session = Quiz.planSession(Date.now());
+      this.session = this.planDailySession(Date.now());
       this.renderStage(el);
     });
     // 自选练习区（常显）：选科 + 学到哪儿（下拉）+ 手动开练
@@ -760,12 +867,13 @@ const App = {
     if (startManual) startManual.addEventListener('click', async () => {
       if (startManual.disabled) return;
       startManual.disabled = true;
-      const added = await this.ensureScopeQuestions(6, (i, n) => { startManual.textContent = `正在出题 ${i}/${n}…`; });
+      const added = await this.ensureScopeQuestions(Scheduler.dayPlanOf(Date.now()).perBlock || 6, (i, n) => { startManual.textContent = `正在出题 ${i}/${n}…`; });
       if (added > 0) startManual.textContent = `已补 ${added} 题，开练…`;
-      this.session = Quiz.planSession(Date.now());
+      this.session = this.planDailySession(Date.now());
       this.renderStage(el);
     });
-    el.querySelector('#reroll-plan').addEventListener('click', () => {
+    const reroll = el.querySelector('#reroll-plan');
+    if (reroll) reroll.addEventListener('click', () => {
       this.planSalt += 1;
       this._savePlanProgress();
       this.renderPractice(el);
@@ -784,6 +892,11 @@ const App = {
     if (gfr) gfr.addEventListener('click', () => this.renderFlashReview(el));
     const pc = el.querySelector('#parent-challenge');
     if (pc) pc.addEventListener('click', () => this.renderParentChallenge(el));
+    const bgm = el.querySelector('#bgm-toggle');
+    if (bgm) bgm.addEventListener('click', () => {
+      Sound.musicToggle();
+      bgm.textContent = `🎵 背景音乐（${Sound.music().on ? '开' : '关'}）`;
+    });
     // 家长入口：主页一键进「学习汇报」页
     const hb = el.querySelector('#home-brief');
     if (hb) hb.addEventListener('click', () => this.show('brief'));
@@ -806,6 +919,34 @@ const App = {
     if (btn) btn.addEventListener('click', () => this.show('settings'));
   },
 
+  // 本周排班预览（家长在「设置→练习排班」排的）：一周每天什么类型一目了然，今天高亮
+  scheduleWeekHTML(now) {
+    const names = { 1: '周一', 2: '周二', 3: '周三', 4: '周四', 5: '周五', 6: '周六', 0: '周日' };
+    const sm = Scheduler.scheduleOf().shortMinutes;
+    const labels = { daily: `日常 ${sm} 分`, holiday: '假期 60 分', rest: '休息' };
+    const todayD = new Date(now).getDay();
+    // 本周一零点起逐日算（区间覆盖也算进去），今天高亮
+    const day = todayD || 7;
+    const mon = now - (day - 1) * 86400000;
+    return `<div class="card schedule-card">
+      <h2>📅 本周排班（家长在「设置」里排）</h2>
+      <div class="schedule-week">
+        ${[1, 2, 3, 4, 5, 6, 0].map((d, i) => {
+          const t = Scheduler.dayTypeOf(mon + i * 86400000);
+          return `<div class="schedule-day type-${t}${d === todayD ? ' today' : ''}">
+            <span class="schedule-dow">${names[d]}</span>
+            <span class="schedule-type">${labels[t]}</span>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+  },
+
+  // 按当日排班题量开一组（日常按家长选的短练时长折算、假期 12 题/组；休息日不出组但自选练仍可开）
+  planDailySession(now) {
+    return Quiz.planSession(now, Scheduler.dayPlanOf(now).perBlock || 6);
+  },
+
   // 主页状态带（首行细条）：问候 + 考试模式冲刺 + 本周习惯 + 免死金牌
   // 按钮 id 不变，#exam-mode-off 事件绑定复用
   statusStripHTML(now, habit, blocks) {
@@ -821,6 +962,81 @@ const App = {
     parts.push(habit.effective >= 7 ? '🏆 本周 7/7 全勤' : `🔥 本周 ${habit.effective}/7 天`);
     parts.push(habit.shieldUsed ? '🛡️ 免死金牌已用' : '🛡️ 免死金牌 1 张');
     return `<div class="status-strip ${cls}">${parts.map(p => `<span class="strip-item">${p}</span>`).join('<span class="strip-sep">·</span>')}${btn}</div>`;
+  },
+
+  // ================= 今日 30 分钟套餐（效率铁律：一键开始、到点收工） =================
+  // 三步闭环：智能练习 2 组 → 背诵快打 5 个 → 微课 1 个；到点主动收工，绝不加码
+  comboProgress(now) {
+    const dayKey = Store.todayKey(now);
+    const recite = typeof Recite !== 'undefined' ? Recite.progress(now) : { done: 0, total: 5 };
+    return {
+      practiceDone: Store.dayStat(dayKey).answered >= 12, // 2 组 × 6 题
+      recite,
+      lessonToday: Object.values(Store.lessonState).some(s => s && s.lastAt && Store.todayKey(s.lastAt) === dayKey),
+    };
+  },
+
+  comboCardHTML(now) {
+    const dayKey = Store.todayKey(now);
+    const p = this.comboProgress(now);
+    const budget = [0, 6].includes(new Date(now).getDay()) ? 60 : 30; // 周末/假期 60 分钟，平日 30
+    const combo = (Store.settings || {}).combo;
+    const started = combo && combo.dateKey === dayKey ? combo.startedAt : 0;
+    const overtime = started > 0 && now - started >= budget * 60000;
+    const reciteDone = p.recite.done >= p.recite.total;
+    const allDone = p.practiceDone && reciteDone && p.lessonToday;
+    // 到点收工：一次性提示音（donePlayed 防止每次进首页重复响）
+    if (overtime && combo && !combo.donePlayed) {
+      Store.settings = { ...Store.settings, combo: { ...combo, donePlayed: true } };
+      Sound.play('done');
+    }
+    const days = Scheduler.examDaysLeft(now);
+    const steps = [
+      ['🎯 智能练习 2 组（20 分钟）', p.practiceDone],
+      [`📝 背诵快打 5 个（${p.recite.done}/${p.recite.total}）`, reciteDone],
+      ['🎬 微课 1 个（5 分钟）', p.lessonToday],
+    ];
+    return `
+      ${overtime ? `<div class="due-banner">⏰ 到点收工！今天 ${budget} 分钟的量够了——细水长流，去玩吧 😎</div>` : ''}
+      <div class="card hero">
+        <h2>⏱ ${days > 0 ? `距中考 ${days} 天 · ` : ''}今日 ${budget} 分钟套餐</h2>
+        <p class="muted">${allDone ? '三步全部完成，今天稳了 🎉' : '三步走完就收工，不多练一题。'}</p>
+        <div class="muted">${steps.map(([label, done]) => `${done ? '✅' : '⬜'} ${label}`).join('<br>')}</div>
+        <div class="session-actions">
+          <button class="btn big glow" id="combo-start">${overtime ? '还学？行吧，拦不住你 😏' : started ? '▶ 继续今天的套餐' : `▶ 开始今天的 ${budget} 分钟`}</button>
+        </div>
+      </div>`;
+  },
+
+  // 一键开始套餐：按 练习 → 背诵快打 → 微课 顺序推进；记开始时间用于到点收工
+  comboStart(el) {
+    const now = Date.now();
+    const dayKey = Store.todayKey(now);
+    const combo = (Store.settings || {}).combo;
+    if (!combo || combo.dateKey !== dayKey) {
+      Store.settings = { ...Store.settings, combo: { dateKey: dayKey, startedAt: now, donePlayed: false } };
+    }
+    const p = this.comboProgress(now);
+    if (!p.practiceDone) {
+      this.session = this.planDailySession(now);
+      return this.renderStage(el);
+    }
+    if (p.recite.done < p.recite.total) return this.renderRecite(el);
+    if (!p.lessonToday) {
+      // 微课：拿今天错题里有微课的知识点；没有就回首页（不硬凑）
+      const kpId = (Store.attempts || [])
+        .filter(a => a.correct === false && Store.todayKey(a.timestamp) === dayKey)
+        .map(a => a.knowledgePointId)
+        .find(id => Lesson.versions(id).length > 0);
+      if (kpId) return Lesson.render(kpId, el, () => this.renderPractice(el));
+    }
+    this.renderPractice(el);
+  },
+
+  // 背诵快打入口：recite.js 未加载时防御回首页
+  renderRecite(el) {
+    if (typeof Recite === 'undefined') return this.renderPractice(el);
+    Recite.render(el, () => this.renderPractice(el));
   },
 
   // 自选练习区（常显）：选科 + 学到哪儿（下拉）+ 手动开练 + 成绩录入入口（点击弹窗）
@@ -1142,7 +1358,7 @@ const App = {
       body = `<div class="options" id="options">` + q.options.map((opt, i) =>
         `<button class="option" data-idx="${i}">${opt}</button>`).join('') + `</div>`;
     } else if (q.type === 'fill') {
-      body = `<input class="fill-input" id="fill-answer" placeholder="输入答案" autocomplete="off">`;
+      body = `<input class="fill-input" id="fill-answer" placeholder="输入答案" autocomplete="off">` + this.fillKeypadHTML();
     } else if (q.type === 'subjective') {
       body = `<textarea class="text-input" id="subj-answer" rows="4" placeholder="写下你的解题过程（自评）"></textarea>`;
     }
@@ -1215,6 +1431,7 @@ const App = {
       fill.focus();
       fill.addEventListener('input', refreshSubmit);
       fill.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
+      this.bindFillKeypad(el, fill);
     }
     const subj = el.querySelector('#subj-answer');
     if (subj) {
@@ -1230,10 +1447,55 @@ const App = {
     });
   },
 
+  // 数字符号面板：孩子不熟键盘，√、±、π 这类符号点着输（填空题专用，普通键盘敲不出来）
+  fillKeypadHTML() {
+    const keys = ['7', '8', '9', '4', '5', '6', '1', '2', '3', '0', '.', '=',
+      '+', '−', '×', '÷', '/', '√', '±', '%', 'π', '(', ')', '²', '³'];
+    return `<div class="keypad" id="fill-keypad">
+      ${keys.map(k => `<button type="button" class="key" data-key="${k}">${k}</button>`).join('')}
+      <button type="button" class="key key-act" data-key="__back__">⌫</button>
+      <button type="button" class="key key-act" data-key="__clear__">清空</button>
+    </div>`;
+  },
+
+  // 面板点击：符号插到光标处（手机上不用调系统键盘）；⌫ 删一字符、清空一键重来
+  bindFillKeypad(el, input) {
+    const pad = el.querySelector('#fill-keypad');
+    if (!pad || !input) return;
+    // 按下不放焦点：别把输入框的光标位置顶掉
+    pad.addEventListener('mousedown', e => e.preventDefault());
+    pad.addEventListener('click', e => {
+      const btn = e.target.closest ? e.target.closest('[data-key]') : (e.target.dataset && e.target.dataset.key ? e.target : null);
+      if (!btn) return;
+      const key = btn.dataset.key;
+      const start = input.selectionStart == null ? input.value.length : input.selectionStart;
+      const end = input.selectionEnd == null ? input.value.length : input.selectionEnd;
+      if (key === '__clear__') {
+        input.value = '';
+        input.setSelectionRange(0, 0);
+      } else if (key === '__back__') {
+        const pos = (start === end && start > 0) ? start - 1 : start;
+        input.value = input.value.slice(0, pos) + input.value.slice(end);
+        input.setSelectionRange(pos, pos);
+      } else {
+        input.value = input.value.slice(0, start) + key + input.value.slice(end);
+        const pos = start + key.length;
+        input.setSelectionRange(pos, pos);
+      }
+      input.focus();
+      input.dispatchEvent(new Event('input'));
+    });
+  },
+
   submitAnswer(q, answer, el) {
     const actualTime = (Date.now() - this.startAt) / 1000;
     const res = Quiz.submitStage(this.session, this.stage, q, answer, actualTime, Date.now());
     this.answered = true;
+    // 答题音效：答对上扬、答错低沉、连击加音（主观题不判分不出声）
+    if (!res.isSubjective && typeof Sound !== 'undefined') {
+      if (res.correct === true) Sound.play(res.combo >= 2 ? 'combo' : 'correct');
+      else if (res.correct === false) Sound.play('wrong');
+    }
     this._saveSession(); // 作答即存盘：反馈页刷新也不丢这一题
     if (res.isSubjective) this.renderFeynman(el, q, answer, actualTime, res);
     else this.renderFeedback(el, q, answer, actualTime, res);
@@ -1455,6 +1717,13 @@ const App = {
     // 连错 2 题降难度时附一条冷笑话（放松模块 §9.7，频率红线每天 ≤2 次），笑话走彩色弹窗
     const joke = res.degradedNext && Jokes.canTell() ? Jokes.pick() : '';
     if (joke) Ui.popup('🤣 爸爸的冷笑话', joke, 'joy');
+    // 连错 3 题宽心（放松模块）：降载由 Quiz 连错降难度自动接管，这里只给一句宽心话；一次连错只弹一次
+    const melt = typeof Wellness !== 'undefined' ? Wellness.checkMeltdown(this.session ? this.session.results : []) : null;
+    if (melt && !this._meltdownShown) {
+      this._meltdownShown = true;
+      Ui.popup(melt.title, melt.text, 'cool');
+    }
+    if (!melt) this._meltdownShown = false;
     // 揭晓前不展示正确答案与作答对照，先让学生自己归因（答案揭晓后移）
     zone.innerHTML = `
       ${res.degradedNext ? `<div class="result bad">${COPY.doubleWrong}</div>` : ''}
@@ -1581,7 +1850,7 @@ const App = {
 
   startBlock(subjectId, el) {
     Store.activeSubjectId = subjectId;
-    this.session = Quiz.planSession(Date.now());
+    this.session = this.planDailySession(Date.now());
     this.renderStage(el);
   },
 
@@ -1608,15 +1877,16 @@ const App = {
     if (btn) btn.addEventListener('click', () => this.startFocus(btn.dataset.kp, el));
   },
 
-  // 摸底回炉卡：把「摸底里不稳的点」显性摆出来一键开练；补到 70 分以上自动撤下
+  // 摸底回炉卡：把「摸底里真不会的点」（答错又慢，25 分）显性摆出来走学习页回炉；补到 30 分以上自动撤下
+  // （答错但快=45 分疑似手滑，留在刷题池再验，不进回炉——否则与刷题池自相矛盾）
   reheatCardHTML(sid) {
     const weak = ((Store.placement || {}).weak || {})[sid] || [];
     const kps = weak.map(id => Store.kpIndex()[id])
-      .filter(k => k && ((Store.mastery[k.id] || {}).score || 0) < 70);
+      .filter(k => k && ((Store.mastery[k.id] || {}).score || 0) < 30);
     if (!kps.length) return '';
     return `<div class="card">
       <h2>🔥 摸底回炉清单</h2>
-      <p class="muted">摸底里这些点不稳——先补再练，别硬刷。补到自测通过就自动撤下。</p>
+      <p class="muted">摸底里这些点是真不会——先补再练，别硬刷。补上来自动撤下。</p>
       <div class="session-actions">
         ${kps.map(k => `<button class="btn secondary" data-reheat="${k.id}">${this.bankEsc(k.name)}</button>`).join('')}
       </div>
@@ -1650,7 +1920,7 @@ const App = {
       const sid = this.activeSubject() ? this.activeSubject().id : '';
       const { dueCount, target } = this.todayTodos(now, sid);
       if (dueCount > 0) {
-        this.session = Quiz.planSession(now);
+        this.session = this.planDailySession(now);
         return this.renderStage(el);
       }
       if (target) this.startFocus(target.kp.id, el);
@@ -1700,11 +1970,17 @@ const App = {
     if (subj && !this.planDone.includes(subj.id)) { this.planDone.push(subj.id); this._savePlanProgress(); }
     const next = this.dailyPlanNext();
     const proMsg = this.proactiveHTML(now, subj ? subj.id : '');
+    // 组间呼吸放松（约 25 分钟节点 = 今天第 2 组练完）：一天最多出一次，可跳过
+    const dayKey = Store.todayKey(now);
+    const breathDue = typeof Wellness !== 'undefined' && Store.dayStat(dayKey).answered >= 12
+      && (Store.settings || {}).breathDate !== dayKey;
+    if (breathDue) Store.settings = { ...Store.settings, breathDate: dayKey };
     el.innerHTML = `
       <div class="card greet">
         <h2>${this.pick(COPY.sessionEnd)}</h2>
         ${lit > 0 ? `<div class="lit-banner">💡 今天新点亮 ${lit} 个知识点</div>` : ''}
         ${Report.battleCardHTML(now)}
+        ${breathDue ? Wellness.breathHTML() : ''}
         ${s.results.length > 0 && s.results.length < 6 ? `<div class="muted" style="margin-top:8px">本组共 ${s.results.length} 题（该范围能出的题有限）。想练满 6 题，可在「设置」里配置 AI 爸爸现场补题。</div>` : ''}
         ${proMsg}
         ${this.nextTargetCardHTML(now, subj ? subj.id : '')}
@@ -1724,12 +2000,14 @@ const App = {
       el.querySelector('#done-today-btn').addEventListener('click', () => this.renderDoneToday(el));
     }
     el.querySelector('#again-btn').addEventListener('click', () => {
-      this.session = Quiz.planSession(Date.now());
+      this.session = this.planDailySession(Date.now());
       this.renderStage(el);
     });
     el.querySelector('#report-btn').addEventListener('click', () => this.show('report'));
     this.wireNextTarget(el);
     this.wireProactive(el, now);
+    const breath = el.querySelector('.breath-card');
+    if (breath && typeof Wellness !== 'undefined') Wellness.breathWire(breath);
   },
 
   // 收工页：战报 + 睡前记忆提示（心理规范 §11.10）
@@ -2087,6 +2365,7 @@ const App = {
     html += Report.weekCardHTML(now);
     html += Report.weekNarrativeHTML(now);
     html += Report.gradeCardHTML();
+    html += Report.analysisCardHTML(now);
     html += '<div id="weekly-ai-slot"></div>';
     html += '<div class="session-actions"><button class="btn secondary" id="print-weekly">🖨 打印本周战报（给家长）</button><button class="btn secondary" id="print-wrongs">🖨 打印本周错题（未解决）</button></div>';
     if (showGuide) html += this.briefGuideHTML();
@@ -2316,9 +2595,17 @@ const App = {
 
   // ================= 学习工具（历史时间轴 / 地理地图，纯本地 SVG） =================
   renderTools(el) {
-    const detail = this._toolDetail; // 'timeline' | 'china-map' | 'world-map' | 'paper' | null
+    const detail = this._toolDetail; // 'timeline' | 'china-map' | 'world-map' | 'paper' | 'essay' | null
     if (detail === 'paper') {
       Paper.render(el, () => { this._toolDetail = null; this.renderTools(el); });
+      return;
+    }
+    if (detail === 'diagnostic') {
+      this.renderDiagPicker(el);
+      return;
+    }
+    if (detail === 'essay') {
+      Essay.render(el, () => { this._toolDetail = null; this.renderTools(el); });
       return;
     }
     if (detail) {
@@ -2410,6 +2697,7 @@ const App = {
 
   renderSettings(el) {
     const s = Store.settings;
+    const sc = Scheduler.scheduleOf();
     el.innerHTML = `
       <div class="card">
         <h2>AI 设置</h2>
@@ -2422,7 +2710,58 @@ const App = {
         <button class="btn" id="save-settings">保存</button>
         <button class="btn secondary" id="test-conn" style="margin-left:8px">测试连接</button>
       </div>
+      <div class="card">
+        <h2>🔊 声音</h2>
+        <p class="muted">答对答错的提示音和背景音乐都是本地合成的，不占流量。调完立刻生效，自动记住。</p>
+        <div class="field-row">
+          <label><input type="checkbox" id="sfx-on" ${Sound.sfx().on ? 'checked' : ''}> 答题音效</label>
+          <input type="range" id="sfx-vol" min="0" max="1" step="0.05" value="${Sound.sfx().vol}">
+          <button class="btn secondary small" id="sfx-test">试听</button>
+        </div>
+        <div class="field-row">
+          <label><input type="checkbox" id="music-on" ${Sound.music().on ? 'checked' : ''}> 背景音乐（放松大脑）</label>
+          <input type="range" id="music-vol" min="0" max="1" step="0.05" value="${Sound.music().vol}">
+          <button class="btn secondary small" id="music-toggle-btn">${Sound.music().on ? '关掉' : '播放'}</button>
+        </div>
+      </div>
       <details class="card" id="bank-card"></details>
+      <div class="card">
+        <h2>📅 练习排班（家长设置）</h2>
+        <p class="muted">提前排好哪天日常短练、哪天假期长练（约 60 分钟）、哪天休息——系统按排班出每天的任务。寒暑假、调休用下面的日期区间整段覆盖。</p>
+        <div class="field-row">
+          <label>日常短练时长</label>
+          <select class="text-input" id="sched-short">
+            ${Scheduler.SHORT_MINUTES.map(m => `<option value="${m}"${sc.shortMinutes === m ? ' selected' : ''}>${m} 分钟（每块 ${Math.round(m / 5)} 题）</option>`).join('')}
+          </select>
+        </div>
+        <div class="schedule-editor">
+          ${[1, 2, 3, 4, 5, 6, 0].map(d => `
+            <div class="field-row">
+              <label>${{ 1: '周一', 2: '周二', 3: '周三', 4: '周四', 5: '周五', 6: '周六', 0: '周日' }[d]}</label>
+              <select class="text-input sched-day" data-day="${d}">
+                <option value="daily"${sc.week[d] === 'daily' ? ' selected' : ''}>日常练习（约 ${sc.shortMinutes} 分钟）</option>
+                <option value="holiday"${sc.week[d] === 'holiday' ? ' selected' : ''}>假期练习（约 60 分钟）</option>
+                <option value="rest"${sc.week[d] === 'rest' ? ' selected' : ''}>休息</option>
+              </select>
+            </div>`).join('')}
+        </div>
+        <h3>假期日期覆盖（优先于上面的周模板）</h3>
+        <div id="sched-ranges"></div>
+        <div class="field-row">
+          <input class="text-input" type="date" id="sched-from" aria-label="开始日期">
+          <input class="text-input" type="date" id="sched-to" aria-label="结束日期">
+          <select class="text-input" id="sched-type">
+            <option value="holiday">假期长练（约 60 分钟）</option>
+            <option value="daily">日常短练（约 ${sc.shortMinutes} 分钟）</option>
+            <option value="rest">休息</option>
+          </select>
+          <button class="btn secondary small" id="sched-add">添加</button>
+        </div>
+        <div class="session-actions">
+          <button class="btn" id="sched-save">保存排班</button>
+        </div>
+        <div class="muted" id="sched-warn"></div>
+      </div>
       <div class="card">
         <h2>🏃 考试模式 & 大考校准</h2>
         <div class="field"><label>考试模式科目（计划只排这一科冲刺）</label>
@@ -2532,6 +2871,77 @@ const App = {
 
     // API Key 填一次即自动保存（失焦时触发），其余字段仍走「保存」按钮
     el.querySelector('#set-key').addEventListener('change', saveSettings);
+
+    // 声音设置：全部即时生效 + 自动保存（调音量边听边调）
+    el.querySelector('#sfx-on').addEventListener('change', e => Sound.setSfx({ on: e.target.checked }));
+    el.querySelector('#sfx-vol').addEventListener('input', e => {
+      Sound.setSfx({ vol: Number(e.target.value) });
+      if (Number(e.target.value) > 0 && !Sound.sfx().on) {
+        Sound.setSfx({ on: true });
+        el.querySelector('#sfx-on').checked = true;
+      }
+    });
+    el.querySelector('#sfx-test').addEventListener('click', () => Sound.play('correct'));
+    const musicBtn = el.querySelector('#music-toggle-btn');
+    const syncMusicUI = () => {
+      const on = Sound.music().on;
+      el.querySelector('#music-on').checked = on;
+      musicBtn.textContent = on ? '关掉' : '播放';
+    };
+    el.querySelector('#music-on').addEventListener('change', e => {
+      if (e.target.checked) Sound.musicOn(); else Sound.musicOff();
+      syncMusicUI();
+    });
+    musicBtn.addEventListener('click', () => { Sound.musicToggle(); syncMusicUI(); });
+    el.querySelector('#music-vol').addEventListener('input', e => {
+      Sound.setMusic({ vol: Number(e.target.value) });
+      if (Number(e.target.value) > 0 && !Sound.music().on) { Sound.musicOn(); syncMusicUI(); }
+    });
+
+    // ===== 练习排班（家长排班）：周模板 + 假期日期区间，保存时过密提醒 =====
+    let schedRanges = sc.ranges.slice();
+    const renderRanges = () => {
+      const box = el.querySelector('#sched-ranges');
+      if (!box) return;
+      // 日常短练分钟数取当前选择（家长可能刚改过档位），保证列表显示与即将保存的一致
+      const sm = Number((el.querySelector('#sched-short') || {}).value) || sc.shortMinutes;
+      const labels = { daily: `日常短练（约 ${sm} 分钟）`, holiday: '假期长练（约 60 分钟）', rest: '休息' };
+      box.innerHTML = schedRanges.length
+        ? schedRanges.map((r, i) => `<div class="field-row">
+            <span class="muted">${r.from} ~ ${r.to} · ${labels[r.type] || labels.daily}</span>
+            <button class="btn secondary small" data-del-range="${i}">删除</button>
+          </div>`).join('')
+        : '<p class="muted">暂无覆盖区间。</p>';
+      box.querySelectorAll('[data-del-range]').forEach(b => b.addEventListener('click', () => {
+        schedRanges.splice(Number(b.dataset.delRange), 1);
+        renderRanges();
+      }));
+    };
+    renderRanges();
+    el.querySelector('#sched-add').addEventListener('click', () => {
+      const from = el.querySelector('#sched-from').value;
+      const to = el.querySelector('#sched-to').value;
+      const type = el.querySelector('#sched-type').value;
+      if (!from || !to || from > to) { alert('日期没填对：开始要早于结束'); return; }
+      schedRanges.push({ from, to, type });
+      renderRanges();
+    });
+    el.querySelector('#sched-save').addEventListener('click', () => {
+      const week = {};
+      el.querySelectorAll('.sched-day').forEach(sel => { week[Number(sel.dataset.day)] = sel.value; });
+      const shortMinutes = Number(el.querySelector('#sched-short').value);
+      const schedule = { week, ranges: schedRanges, shortMinutes };
+      Store.settings = { ...Store.settings, schedule };
+      // 过密提醒：排满了不拦着，但得让家长知道孩子吃不消
+      const warns = Scheduler.scheduleWarnings(schedule);
+      const zone = el.querySelector('#sched-warn');
+      if (warns.length) {
+        if (zone) zone.innerHTML = '⚠️ ' + warns.join('<br>⚠️ ');
+        Ui.popup('⚠️ 排班提醒：排得有点满', warns.join(''), 'cool');
+      } else if (zone) {
+        zone.innerHTML = '✅ 排班已保存，量刚刚好。';
+      }
+    });
 
     el.querySelector('#save-settings').addEventListener('click', () => {
       saveSettings();

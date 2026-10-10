@@ -76,9 +76,10 @@ const Quiz = {
     return ids;
   },
 
-  // 关卡化 session：热身（到期悬赏）→ 突破 → 交错 → 必对收尾，共 6 题
+  // 关卡化 session：热身（到期悬赏）→ 突破 → 交错 → 必对收尾，默认共 6 题
   // 每日题池配比（阶段 3 §13.2 调度巅峰）：悬赏 20% + 突破 40% + 交错 40%（±1 题取整）
-  planSession(now) {
+  // total 随排班日型走：日常短练 6 题/组，假期长练 12 题/组（Scheduler.dayPlanOf）
+  planSession(now, total = 6) {
     const sid = this.subjectId();
     const due = Wrongbook.due(now);
     const retests = due.retests.filter(r => r.subjectId === sid);
@@ -86,8 +87,8 @@ const Quiz = {
     const stages = [];
     if (retests.length > 0) stages.push({ type: 'retest', recordId: retests[0].id });
     if (variants.length > 0) stages.push({ type: 'variant', recordId: variants[0].id });
-    // 剩 5 题（含必对收尾）按 40/40 分给突破与交错
-    const rest = 5 - stages.length;
+    // 除必对收尾外剩下的题按 40/40 分给突破与交错
+    const rest = Math.max(0, total - 1 - stages.length);
     const breakCount = Math.ceil(rest / 2);
     const interleaveCount = rest - breakCount;
     for (let i = 0; i < breakCount; i++) stages.push({ type: 'breakthrough' });

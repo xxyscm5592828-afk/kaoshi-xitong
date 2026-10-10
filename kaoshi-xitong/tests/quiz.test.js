@@ -63,6 +63,14 @@ test('planSession：无到期悬赏 → 3 突破 + 2 交错 + 1 必对收尾（4
   assert.equal(s.stages[5].type, 'safe');
 });
 
+test('planSession：按排班题量参数出题（假期 12 题/组），默认仍 6 题', () => {
+  fresh();
+  const s = Quiz.planSession(T0, 12);
+  assert.equal(s.stages.length, 12);
+  assert.equal(s.stages[s.stages.length - 1].type, 'safe');
+  assert.equal(Quiz.planSession(T0).stages.length, 6, '不传 total 时向后兼容默认 6 题');
+});
+
 test('planSession：有 D3 到期重做 → 悬赏排第一（热身），交错补足', () => {
   fresh();
   const rec = Wrongbook.onWrong(SEED.questions[0], 1, T0 - 4 * DAY);

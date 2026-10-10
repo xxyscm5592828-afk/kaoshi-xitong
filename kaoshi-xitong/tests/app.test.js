@@ -62,7 +62,7 @@ let fetchImpl = () => Promise.resolve({
 
 function loadAll() {
   const srcs = ['storage.js', 'ai.js', 'assistant.js', 'data.js', 'scheduler.js', 'triggers.js',
-    'mastery.js', 'placement.js', 'quiz.js', 'wrongbook.js', 'speech.js', 'lesson.js', 'report.js', 'games.js', 'facts.js', 'ui.js', 'celebrate.js', 'app.js']
+    'mastery.js', 'placement.js', 'quiz.js', 'wrongbook.js', 'speech.js', 'lesson.js', 'report.js', 'games.js', 'facts.js', 'ui.js', 'sound.js', 'wellness.js', 'recite.js', 'celebrate.js', 'app.js']
     .map(f => fs.readFileSync(path.join(__dirname, '..', 'js', f), 'utf8')).join('\n');
   const fetchStub = (url, opt) => fetchImpl(url, opt);
   // window 桩：让 Speech 走「支持朗读」分支，验证接线点确实产出朗读按钮
@@ -426,11 +426,15 @@ test('主动消息：触发点在结算页（首页只留常驻待办横幅，�
 // ================= 两处时间预估口径不打架（首页「整组体验含讲解」vs 结算页「纯作答」） =================
 // 注意：本测例须排在会把 App.renderPractice 换成桩的「继续上次练习」测例之前
 test('首页推荐组合卡：15 分钟标明「含讲解」口径，与结算页「做题约 X 分钟」区分开', () => {
-  fresh();
-  const home = new FakeEl('root');
-  App.renderPractice(home);
-  assert.ok(home.innerHTML.includes('约 15 分钟（含讲解）'), `首页应标明整组体验口径，实际：${home.innerHTML}`);
-  assert.ok(!home.innerHTML.includes('做题约'), '首页不复用「做题约」这一纯作答口径，免得两个数字被当成同一件事');
+  const realNow = Date.now;
+  Date.now = () => new Date(2026, 0, 7, 15, 0, 0).getTime(); // 固定工作日（日常日型 6 题/块 → 15 分钟），避免周末「假期口径」漂移
+  try {
+    fresh();
+    const home = new FakeEl('root');
+    App.renderPractice(home);
+    assert.ok(home.innerHTML.includes('约 15 分钟（含讲解）'), `首页应标明整组体验口径，实际：${home.innerHTML}`);
+    assert.ok(!home.innerHTML.includes('做题约'), '首页不复用「做题约」这一纯作答口径，免得两个数字被当成同一件事');
+  } finally { Date.now = realNow; }
 });
 
 // ================= 今日待办聚合入口（练习首页） =================

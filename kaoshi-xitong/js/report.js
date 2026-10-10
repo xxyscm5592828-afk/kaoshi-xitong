@@ -445,6 +445,140 @@ const Report = {
     this.openPrint(this.printWrongsHTML(now));
   },
 
+  // ===== 学课分析（教育测量学五维画像，Analysis 引擎）=====
+  // 主因短标签（学习汇报横向对比表用）
+  _issueLabel(key) {
+    return { foundation: '基础不牢', transfer: '会背不会用', structure: '结构性缺口', fluency: '会但不熟', steady: '状态平稳' }[key] || '';
+  },
+
+  // 学习汇报接入卡：各科横向诊断 + 全局综合（覆盖度不足时提示）
+  analysisCardHTML(now) {
+    const a = Analysis.profileAll(now);
+    if (!a.subjects.length) {
+      return `<div class="card"><h2>🔬 学课分析</h2><div class="empty">分析数据还在积累——去「学习工具 → 学课摸底分析测试」做一次摸底，或先练几组题，这里会出各科的专业画像。</div></div>`;
+    }
+    const esc = s => String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+    const rows = a.subjects.map(s => {
+      const r = s.rating;
+      return `<tr><td>${esc(s.subjectName)}</td><td><span class="heat-chip" style="background:${this.heatColor(s.mastery.score)}">${s.mastery.score}</span></td><td>${r.label}</td><td>${esc(this._issueLabel(s.mainIssue.key))}</td></tr>`;
+    }).join('');
+    const o = a.overall;
+    return `<div class="card"><h2>🔬 学课分析 <span class="muted">${o.rating.label} · 综合 ${o.score}</span></h2>
+      <div class="overview-stats">
+        <div class="stat"><span class="stat-num">${o.score}</span><span class="stat-label">加权掌握度</span></div>
+        <div class="stat"><span class="stat-num">${Math.round(o.coverageRatio * 100)}<small>%</small></span><span class="stat-label">作答覆盖</span></div>
+        <div class="stat"><span class="stat-num">${a.subjects.length}</span><span class="stat-label">已分析科目</span></div>
+      </div>
+      <table><thead><tr><th>科目</th><th>掌握度</th><th>评级</th><th>主因</th></tr></thead><tbody>${rows}</tbody></table>
+      <p class="muted">已作答 ${o.testedCount}/${o.leafCount} 个知识点${o.coverageRatio < 0.3 ? '——数据还偏少，结论仅供参考' : ''}。想细看某科，去「学习工具 → 学课摸底分析测试」做一次。</p>
+    </div>`;
+  },
+
+  // 诊断报告·页面展示版（.card 结构；.pr-doc 只在打印区生效，不能用于页面展示）
+  diagnosticHTML(p) {
+    const esc = s => String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+    const pct = v => Math.round(v * 100) + '%';
+    const dateStr = new Date(p.generatedAt).toLocaleDateString('zh-CN');
+    const r = p.rating;
+    const correctCount = p.tested - p.error.wrongCount;
+    const chapterRows = p.chapters.map(c =>
+      `<tr><td>${esc(c.name)}</td><td>${c.n}</td><td>${pct(c.acc)}</td><td><span class="heat-chip" style="background:${this.heatColor(c.score)}">${c.score}</span></td></tr>`).join('');
+    const layerRows = p.cognitive.byLayer.map(l =>
+      `<tr><td>${l.layer}</td><td>${l.total}</td><td>${pct(l.acc)}</td></tr>`).join('');
+    const rootItems = p.roots.length
+      ? `<div class="session-actions">${p.roots.map(x => `<button class="btn secondary" data-kp="${x.kpId}">🛠 ${esc(x.name)} → 先补「${esc(x.rootName)}」</button>`).join('')}</div>`
+      : '<div class="muted">暂无需要回炉重建的点。</div>';
+    const weakChips = p.weakPoints.length
+      ? p.weakPoints.slice(0, 8).map(w => `<span class="heat-chip" style="background:${this.heatColor(w.eff)}">${esc(w.name)} ${w.eff}</span>`).join(' ')
+      : '<span class="muted">没有明显薄弱点。</span>';
+    const adviceItems = p.advice.items.map(a => `<li>${esc(a)}</li>`).join('');
+    const parentNote = `孩子对「${esc(p.subjectName)}」的掌握程度属于「${r.label}」（${p.mastery.score} 分）。${esc(p.advice.headline)} 不用催进度——掌握度是长期曲线，重点是陪他把上面提到的短板一个个补上，讲得清楚就是真会了。`;
+
+    return `
+      <div class="card overview">
+        <h2>🔬 ${esc(p.subjectName)}·学课摸底分析报告 <span class="muted">${dateStr}</span></h2>
+        <p class="muted">本次作答 ${p.tested} 题、答对 ${correctCount} 题。${esc(p.mainIssue.text)}</p>
+        <div class="overview-stats">
+          <div class="stat"><span class="stat-num">${p.mastery.score}</span><span class="stat-label">掌握度 · ${r.label}</span></div>
+          <div class="stat"><span class="stat-num">${p.tested}<small>/${p.totalLeaves}</small></span><span class="stat-label">已测知识点</span></div>
+          <div class="stat"><span class="stat-num">${pct(p.coverage.ratio)}</span><span class="stat-label">覆盖度 · ${p.coverage.label}</span></div>
+        </div>
+        <div class="session-actions">
+          <button class="btn secondary" id="diag-print">🖨 打印报告</button>
+          <button class="btn secondary" id="diag-retest">🔄 重新测试</button>
+          <button class="btn secondary" id="diag-back">← 返回</button>
+        </div>
+      </div>
+      <div class="card"><h2>① 分章掌握</h2>
+        <table><thead><tr><th>章节</th><th>已测</th><th>答对率</th><th>掌握度</th></tr></thead><tbody>${chapterRows}</tbody></table>
+      </div>
+      <div class="card"><h2>② 认知层级</h2>
+        <p class="muted">低层（记忆·理解）是「记得住」，高层（应用·分析）是「用得出」。${p.cognitive.gap >= 0.3 ? '两层差距偏大，属会背不会用。' : '两层比较均衡。'}</p>
+        <table><thead><tr><th>层级</th><th>题数</th><th>正确率</th></tr></thead><tbody>${layerRows}</tbody></table>
+      </div>
+      <div class="card"><h2>③ 熟练度</h2>
+        <p>答对题用时中位数约为标准用时的 <strong>${p.fluency.samples ? pct(p.fluency.median) : '—'}</strong>（${p.fluency.levelLabel}）。${p.fluency.level === 'slow' ? '会但不熟，练到自动化才算真会。' : '速度在合理区间。'}</p>
+      </div>
+      <div class="card"><h2>④ 错误结构</h2>
+        ${p.error.wrongCount
+          ? `<p>本次答错 <strong>${p.error.wrongCount}</strong> 道${p.error.concentrated ? '，且高度集中在「' + esc(p.error.clusters[0].name) + '」——结构性缺口。' : '，分布较分散。'}</p>`
+          : '<p>本次全部答对，没有发现明显错误点。</p>'}
+      </div>
+      <div class="card"><h2>⑤ 薄弱点与回炉清单</h2>
+        <p>${weakChips}</p>
+        <p class="muted" style="margin-top:8px">需要回炉重建先修的点（点一下直接去学）：</p>
+        ${rootItems}
+      </div>
+      <div class="card"><h2>📋 下一步建议</h2>
+        <p><strong>${esc(p.advice.headline)}</strong></p>
+        <ul>${adviceItems}</ul>
+      </div>
+      <div class="card"><h2>👨‍👩‍👧 给家长的话</h2>
+        <p>${parentNote}</p>
+      </div>`;
+  },
+
+  // 诊断报告·打印版（.pr-doc 结构，黑白打印友好）
+  printDiagnosticHTML(p) {
+    const dateStr = new Date(p.generatedAt).toLocaleDateString('zh-CN');
+    const correctCount = p.tested - p.error.wrongCount;
+    const chapterRows = p.chapters.map(c =>
+      `<tr><td>${c.name}</td><td>${c.n}</td><td>${Math.round(c.acc * 100)}%</td><td>${c.score}</td></tr>`).join('');
+    const rootLines = p.roots.length
+      ? p.roots.map(x => `<li>「${x.name}」→ 先补「${x.rootName}」</li>`).join('')
+      : '<li>暂无</li>';
+    const adviceLines = p.advice.items.map(a => `<li>${a}</li>`).join('');
+    return `
+      <div class="pr-doc">
+        <h1>开挂补习系统（初二、初三） · ${p.subjectName}学课摸底分析报告</h1>
+        <p class="pr-range">生成时间：${dateStr}</p>
+        <h2>结论摘要</h2>
+        <ul>
+          <li>综合掌握度：${p.mastery.score} 分（${p.rating.label}）</li>
+          <li>本次测试 ${p.tested} 题、答对 ${correctCount} 题（覆盖 ${p.tested}/${p.totalLeaves} 个知识点，${p.coverage.label}）</li>
+          <li>主要问题：${p.mainIssue.text}</li>
+        </ul>
+        <h2>分章掌握</h2>
+        <table><thead><tr><th>章节</th><th>已测</th><th>答对率</th><th>掌握度</th></tr></thead><tbody>${chapterRows}</tbody></table>
+        <h2>认知层级（低层=记得住，高层=用得出）</h2>
+        <ul>${p.cognitive.byLayer.map(l => `<li>${l.layer}：${l.total} 题，正确率 ${Math.round(l.acc * 100)}%</li>`).join('')}</ul>
+        <h2>熟练度</h2>
+        <p>答对题用时中位数约为标准用时的 ${p.fluency.samples ? Math.round(p.fluency.median * 100) + '%' : '—'}（${p.fluency.levelLabel}）。</p>
+        <h2>回炉清单</h2>
+        <ul>${rootLines}</ul>
+        <h2>下一步建议</h2>
+        <ul>${adviceLines}</ul>
+        <h2>给家长的话</h2>
+        <p>孩子对「${p.subjectName}」的掌握程度属于「${p.rating.label}」（${p.mastery.score} 分）。${p.advice.headline} 不用催进度——掌握度是长期曲线，重点是陪他把短板一个个补上，讲得清楚就是真会了。</p>
+        <p class="pr-note">本报告基于作答数据自动生成：掌握度 = 正确率×用时×指数遗忘；认知层级按布鲁姆分类（记忆/理解/应用/分析）统计；根因沿先修链下钻定位。所有计算都在本机完成，不联网。</p>
+        <p class="pr-foot">本报告由系统根据练习数据自动生成。</p>
+      </div>`;
+  },
+
+  openPrintDiagnostic(p) {
+    this.openPrint(this.printDiagnosticHTML(p));
+  },
+
   render(el) {
     const now = Date.now();
     const mastery = Store.mastery;

@@ -312,7 +312,7 @@ test('重置：Store.reset 清空全部 tutor.* 键（含阶段3键），非本�
   const left = [];
   for (let i = 0; i < mockLS.length; i++) left.push(mockLS.key(i));
   assert.deepEqual(left.filter(k => k.startsWith('tutor.')).sort(),
-    ['tutor.attempts', 'tutor.dayStats', 'tutor.knowledgePoints', 'tutor.lessonState', 'tutor.lessons',
+    ['tutor.attempts', 'tutor.dayStats', 'tutor.diagnosticReports', 'tutor.knowledgePoints', 'tutor.lessonState', 'tutor.lessons',
      'tutor.mastery', 'tutor.placement', 'tutor.questions', 'tutor.schemaVersion', 'tutor.seedVersion', 'tutor.settings', 'tutor.solutionCache', 'tutor.subjects', 'tutor.wrongbook'],
     '重置后不应残留 activeSubjectId/examScores/facts/planProgress/seasons');
   assert.equal(mockLS.getItem('other.app'), 'keep', '非本应用键不应被删');
@@ -371,4 +371,111 @@ test('habit：跨周自动刷新金牌；本周从未练不触发保底', () => 
   assert.equal(h2.shieldUsed, false);
   assert.equal(h2.days, 0);
   assert.equal(h2.protect, false);
+});
+
+// ================= 练习排班（家长排：日型 / 题量 / 过密提醒） =================
+const MON = new Date('2026-09-14T00:00:00').getTime(); // 周一
+const TUE = new Date('2026-09-15T00:00:00').getTime(); // 周二
+const SAT = new Date('2026-09-19T00:00:00').getTime(); // 周六
+const SUN = new Date('2026-09-20T00:00:00').getTime(); // 周日
+
+test('排班：默认周模板（周一~五日常、周六日假期）', () => {
+  seed([{ id: 'math', name: '数学', default: true }], [{ id: 'k1', subjectId: 'math', level: 4, name: 'K1', weight: 3 }], []);
+  assert.equal(Scheduler.dayTypeOf(TUE), 'daily');
+  assert.equal(Scheduler.dayTypeOf(MON), 'daily');
+  assert.equal(Scheduler.dayTypeOf(SAT), 'holiday');
+  assert.equal(Scheduler.dayTypeOf(SUN), 'holiday');
+});
+
+test('排班：日期区间覆盖优先于周模板', () => {
+  seed([{ id: 'math', name: '数学', default: true }], [{ id: 'k1', subjectId: 'math', level: 4, name: 'K1', weight: 3 }], []);
+  Store.settings = { ...Store.settings, schedule: {
+    week: { 1: 'daily', 2: 'daily', 3: 'daily', 4: 'daily', 5: 'daily', 6: 'daily', 0: 'daily' },
+    ranges: [{ from: '2026-09-14', to: '2026-09-18', type: 'holiday' }, { from: '2026-09-19', to: '2026-09-20', type: 'rest' }],
+  } };
+  assert.equal(Scheduler.dayTypeOf(TUE), 'holiday', '区间把周二覆盖成长练');
+  assert.equal(Scheduler.dayTypeOf(SAT), 'rest', '区间把周六覆盖成休息');
+  assert.equal(Scheduler.dayTypeOf(new Date('2026-09-21T00:00:00').getTime()), 'daily', '区间外回落周模板');
+});
+
+test('排班：非法日型回落 daily；scheduleOf 缺省补默认周模板', () => {
+  seed([{ id: 'math', name: '数学', default: true }], [{ id: 'k1', subjectId: 'math', level: 4, name: 'K1', weight: 3 }], []);
+  Store.settings = { ...Store.settings, schedule: { week: { 2: '不存在' }, ranges: [] } };
+  assert.equal(Scheduler.dayTypeOf(TUE), 'daily', '非法值回落 daily');
+  assert.equal(Scheduler.scheduleOf().week[1], 'daily', '未指定的周一回落默认 daily');
+});
+
+test('排班：日型决定每块题量（日常 6 / 假期 12），休息日不出计划', () => {
+  seed([{ id: 'math', name: '数学', default: true }, { id: 'geo', name: '地理' }],
+    [{ id: 'k1', subjectId: 'math', level: 4, name: 'K1', weight: 3 },
+     { id: 'k2', subjectId: 'geo', level: 4, name: 'K2', weight: 3 }], []);
+  Store.attempts = [{ id: 'a0', questionId: 'qx', knowledgePointId: 'k1', correct: true, actualTime: 10, timestamp: T0 - DAY }];
+  assert.equal(Scheduler.dayPlanOf(MON).perBlock, 6);
+  assert.equal(Scheduler.dayPlanOf(SAT).perBlock, 12);
+  assert.equal(Scheduler.plan(MON, 0)[0].count, 6, '日常日每块 6 题');
+  assert.equal(Scheduler.plan(SAT, 0)[0].count, 12, '假期日每块 12 题');
+  // 周一设休息 → 不出计划
+  Store.settings = { ...Store.settings, schedule: { week: { 1: 'rest' }, ranges: [] } };
+  assert.deepEqual(Scheduler.plan(MON, 0), [], '休息日不出计划');
+});
+
+test('排班：日常短练时长档位（10/20/30 分钟）决定每块题量与时长', () => {
+  seed([{ id: 'math', name: '数学', default: true }, { id: 'geo', name: '地理' }],
+    [{ id: 'k1', subjectId: 'math', level: 4, name: 'K1', weight: 3 },
+     { id: 'k2', subjectId: 'geo', level: 4, name: 'K2', weight: 3 }], []);
+  Store.attempts = [{ id: 'a0', questionId: 'qx', knowledgePointId: 'k1', correct: true, actualTime: 10, timestamp: T0 - DAY }];
+  // 缺省 30 分钟：每块 6 题、单块 15 分钟（与原有行为一致）
+  assert.equal(Scheduler.scheduleOf().shortMinutes, 30);
+  assert.equal(Scheduler.dayPlanOf(MON).perBlock, 6);
+  assert.equal(Scheduler.dayPlanOf(MON).minutes, 15);
+  // 20 分钟档
+  Store.settings = { ...Store.settings, schedule: { week: { 1: 'daily' }, ranges: [], shortMinutes: 20 } };
+  assert.equal(Scheduler.dayPlanOf(MON).perBlock, 4, '20 分钟档：2 块 × 4 题 × 2.5 分');
+  assert.equal(Scheduler.dayPlanOf(MON).minutes, 10);
+  assert.equal(Scheduler.plan(MON, 0)[0].count, 4, '今日计划的题量跟着档位走');
+  // 10 分钟档
+  Store.settings = { ...Store.settings, schedule: { week: { 1: 'daily' }, ranges: [], shortMinutes: 10 } };
+  assert.equal(Scheduler.dayPlanOf(MON).perBlock, 2, '10 分钟档：2 块 × 2 题 × 2.5 分');
+  assert.equal(Scheduler.dayPlanOf(MON).minutes, 5);
+  // 假期不受短练档位影响
+  assert.equal(Scheduler.dayPlanOf(SAT).perBlock, 12);
+  // 非法档位回落 30
+  Store.settings = { ...Store.settings, schedule: { week: { 1: 'daily' }, ranges: [], shortMinutes: 45 } };
+  assert.equal(Scheduler.scheduleOf().shortMinutes, 30, '非法档位回落默认 30');
+  assert.equal(Scheduler.dayPlanOf(MON).perBlock, 6);
+});
+
+test('排班过密提醒：周总量按家长选的短练时长折算', () => {
+  seed([], [], []);
+  // 4 天长练（240 分钟）+ 3 天日常；日常档位直接把周总量推过 5 小时阈值
+  const week = { 1: 'holiday', 2: 'daily', 3: 'holiday', 4: 'daily', 5: 'holiday', 6: 'daily', 0: 'holiday' };
+  const short30 = Scheduler.scheduleWarnings({ week, ranges: [], shortMinutes: 30 });
+  assert.ok(short30.some(x => x.includes('小时')), `日常 30 分时总量 330 分钟应提醒: ${short30.join('|')}`);
+  const short10 = Scheduler.scheduleWarnings({ week, ranges: [], shortMinutes: 10 });
+  assert.ok(!short10.some(x => x.includes('小时')), `日常压到 10 分后总量 270 分钟不该提醒: ${short10.join('|')}`);
+});
+
+test('排班过密提醒：一周无休 / 周总量超 5 小时 / 连续长练', () => {
+  seed([], [], []);
+  // 全日常：无休（不触发总量、不触发连续长练）
+  const allDaily = Scheduler.scheduleWarnings({ week: { 1: 'daily', 2: 'daily', 3: 'daily', 4: 'daily', 5: 'daily', 6: 'daily', 0: 'daily' }, ranges: [] });
+  assert.ok(allDaily.some(x => x.includes('休息')), `应提醒没有休息日: ${allDaily.join('|')}`);
+  assert.ok(!allDaily.some(x => x.includes('小时')));
+  // 全长练：无休 + 周总量 7×60=420 分钟 > 300 + 连续 7 天长练
+  const allHoliday = Scheduler.scheduleWarnings({ week: { 1: 'holiday', 2: 'holiday', 3: 'holiday', 4: 'holiday', 5: 'holiday', 6: 'holiday', 0: 'holiday' }, ranges: [] });
+  assert.ok(allHoliday.some(x => x.includes('休息')));
+  assert.ok(allHoliday.some(x => x.includes('小时')), `应提醒总量过载: ${allHoliday.join('|')}`);
+  assert.ok(allHoliday.some(x => x.includes('连续')), `应提醒连续长练: ${allHoliday.join('|')}`);
+  // 合理排班：无警告
+  const ok = Scheduler.scheduleWarnings({ week: { 1: 'daily', 2: 'daily', 3: 'daily', 4: 'daily', 5: 'daily', 6: 'rest', 0: 'holiday' }, ranges: [] });
+  assert.deepEqual(ok, [], `合理排班不应报警告: ${ok.join('|')}`);
+});
+
+test('排班过密提醒：超长假期区间（>14 天连续长练）', () => {
+  seed([], [], []);
+  const w = Scheduler.scheduleWarnings({
+    week: { 1: 'daily', 2: 'daily', 3: 'daily', 4: 'daily', 5: 'daily', 6: 'rest', 0: 'holiday' },
+    ranges: [{ from: '2027-01-20', to: '2027-02-20', type: 'holiday' }],
+  });
+  assert.ok(w.some(x => x.includes('2027-01-20') && x.includes('2027-02-20')), `应提醒超长假期区间: ${w.join('|')}`);
 });

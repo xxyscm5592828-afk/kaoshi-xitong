@@ -1,4 +1,4 @@
-// 入学摸底测试：探针骨架（真实题库）+ 三分档设定 + 会话状态机 + 副作用边界（不进错题本）
+// 入学摸底测试：探针骨架（真实题库）+ 四分档设定 + 会话状态机 + 副作用边界（不进错题本）
 const { test } = require('node:test');
 const assert = require('node:assert');
 const fs = require('node:fs');
@@ -27,13 +27,16 @@ function fresh() {
   Store.activeSubjectId = 'math';
 }
 
-test('applyPlacement 三分档：对快=80 / 对=75 / 错=25', () => {
+test('applyPlacement 四分档：对快=80 / 对=75 / 错快=45 / 错慢=25', () => {
   const now = Date.now();
   const fast = Mastery.applyPlacement(true, true, now);
   assert.equal(fast.score, 80);
   assert.equal(fast.reviewCount, 0);
   const normal = Mastery.applyPlacement(true, false, now);
   assert.equal(normal.score, 75);
+  const slip = Mastery.applyPlacement(false, true, now);
+  assert.equal(slip.score, 45, '错得很快疑似手滑，留池继续验（不到回炉线）');
+  assert.equal(slip.wrongStreak, 1);
   const wrong = Mastery.applyPlacement(false, false, now);
   assert.equal(wrong.score, 25);
   assert.equal(wrong.wrongStreak, 1);
@@ -92,7 +95,7 @@ test('record 写掌握度与作答明细，但不进错题本', () => {
   Placement.build('math');
   const q = Placement.current();
   const wrongAttempsBefore = 0;
-  Placement.record(q, false, 30, Date.now());
+  Placement.record(q, false, (q.expectedTime || 60) * 2, Date.now());
   const m = Store.mastery[q.knowledgePointId];
   assert.ok(m, '摸底作答后该知识点应有掌握度记录');
   assert.equal(m.score, 25);
@@ -100,11 +103,11 @@ test('record 写掌握度与作答明细，但不进错题本', () => {
   assert.equal(Store.wrongbook.length, wrongAttempsBefore, '摸底答错不应产生错题记录');
 });
 
-test('摸底答错的知识点被剔出刷题池（score<30），且诊断不误判先修链', () => {
+test('摸底答错又慢的知识点被剔出刷题池（score<30），且诊断不误判先修链', () => {
   fresh();
   Placement.build('math');
   const q = Placement.current();
-  Placement.record(q, false, 30, Date.now());
+  Placement.record(q, false, (q.expectedTime || 60) * 2, Date.now());
   const kp = Store.kpIndex()[q.knowledgePointId];
   const now = Date.now();
   const m = Store.mastery[q.knowledgePointId];
@@ -130,14 +133,16 @@ test('中途退出：会话保留（重进从下一题继续）、不标记完�
   assert.equal(pos, 2);
 });
 
-test('其他科目通用骨架：每科能组出探针题（非数学无根基点）', () => {
+test('其他科目通用骨架：结构根点在前 + 补章，共 5 题', () => {
   fresh();
   const physics = Store.subjects.find(s => s.id === 'physics');
   Store.activeSubjectId = 'physics';
+  const plan = Placement.probePlan('physics');
+  assert.equal(plan.length, 5);
+  assert.deepEqual(plan.slice(0, 3), Placement._structureRoots('physics', 3), '结构根点排在章代表题之前');
   const active = Placement.build('physics');
   assert.ok(active, `物理应能组出摸底题（叶点有题即可）`);
-  assert.ok(active.order.length > 0);
-  assert.ok(active.order.length <= 5);
+  assert.equal(active.order.length, 5);
   const qIdx = Store.questionIndex();
   for (const qid of active.order) {
     const q = qIdx[qid];
@@ -159,4 +164,61 @@ test('刷新恢复：build 后读到同一进度', () => {
   const { pos, total } = Placement.progress();
   assert.equal(pos, 2);
   assert.equal(total, 9);
+});
+
+test('analysisPlan：约 20 题分层抽样，无重复、均为该科有题叶点', () => {
+  fresh();
+  const plan = Placement.analysisPlan('math');
+  assert.ok(plan.length >= 10 && plan.length <= 20, `数学分析计划应在 10~20 题之间，实际 ${plan.length}`);
+  assert.equal(new Set(plan).size, plan.length, '每叶点最多 1 题');
+  const kpIdx = Store.kpIndex();
+  for (const id of plan) {
+    const kp = kpIdx[id];
+    assert.ok(kp && kp.subjectId === 'math' && kp.level === 4, `点 ${id} 应为数学 L4 叶点`);
+    assert.ok(Placement.hasQuestion(id), `点 ${id} 应有题`);
+  }
+});
+
+test('analysisPlan 跳过已点亮（eff≥85）的叶点', () => {
+  fresh();
+  const now = Date.now();
+  const litIds = Store.knowledgePoints
+    .filter(k => k.subjectId === 'math' && k.level === 4 && Placement.hasQuestion(k.id))
+    .slice(0, 3).map(k => k.id);
+  for (const id of litIds) {
+    Store.mastery = { ...Store.mastery, [id]: { score: 90, lastReviewAt: now, reviewCount: 2, correctStreak: 2, fastStreak: 2, wrongStreak: 0, interval: 4 } };
+  }
+  const plan = Placement.analysisPlan('math');
+  for (const id of litIds) {
+    assert.ok(!plan.includes(id), `已点亮点 ${id} 不应再被抽测`);
+  }
+});
+
+test('diag 会话：纯诊断 build→record（results 带 actualTime）→finish，不落 mastery/attempts/done', () => {
+  fresh();
+  const active = Placement.diag.build('math');
+  assert.ok(active);
+  assert.equal(active.idx, 0);
+  const q = Placement.diag.current();
+  assert.ok(q, 'diag.current 应返回首题');
+  const { pos, total } = Placement.diag.progress();
+  assert.equal(pos, 1);
+  assert.equal(total, active.order.length);
+  Placement.diag.record(q, true, 10, Date.now());
+  assert.equal(Store.placement.diag.results.length, 1);
+  assert.equal(Store.placement.diag.results[0].actualTime, 10, 'results 必须带 actualTime 供熟练度维度');
+  assert.equal(Store.attempts.length, 0, '纯诊断不落作答明细');
+  assert.ok(!Store.mastery[q.knowledgePointId], '纯诊断不落掌握度');
+  while (Placement.diag.current()) {
+    Placement.diag.record(Placement.diag.current(), false, 60, Date.now());
+  }
+  const summary = Placement.diag.finish();
+  assert.ok(summary);
+  assert.equal(summary.subjectId, 'math');
+  assert.equal(summary.total, active.order.length);
+  assert.equal(summary.results.length, active.order.length);
+  assert.equal(Store.placement.diag, null);
+  assert.equal(Placement.needed('math'), true, '纯诊断不标记已摸底（首次摸底引导仍会触发）');
+  assert.deepEqual(Store.mastery, {}, '全程不写任何掌握度');
+  assert.equal(Store.attempts.length, 0, '全程不写任何作答明细');
 });

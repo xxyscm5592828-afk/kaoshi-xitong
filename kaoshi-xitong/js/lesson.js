@@ -9,7 +9,7 @@ const Lesson = {
 
   _saveState(kpId, st) {
     const all = Store.lessonState;
-    all[kpId] = st;
+    all[kpId] = { ...st, lastAt: Date.now() }; // lastAt：今日套餐判定「今天看过微课」用
     Store.lessonState = all;
   },
 

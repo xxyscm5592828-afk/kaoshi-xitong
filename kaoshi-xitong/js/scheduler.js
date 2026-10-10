@@ -6,6 +6,89 @@ const Scheduler = {
   DEFAULT_TERM_START: '2026-09-01',
   TERM_WEEKS: 20,   // 一学期按 20 教学周估算
 
+  // ===== 练习排班（家长提前排：哪天日常短练 / 假期长练 / 休息）=====
+  // 周模板缺省：周一~五日常短练（时长家长选，默认 30 分钟），周六日假期（约 60 分钟）；日期区间覆盖优先于周模板
+  DEFAULT_SCHEDULE: {
+    week: { 1: 'daily', 2: 'daily', 3: 'daily', 4: 'daily', 5: 'daily', 6: 'holiday', 0: 'holiday' },
+    ranges: [],
+    shortMinutes: 30,
+  },
+  // 日常短练时长档位（分钟，整天两块合计）：给孩子减负，家长可压到 10/20 分钟
+  SHORT_MINUTES: [10, 20, 30],
+  DEFAULT_SHORT_MINUTES: 30,
+  // 日型 → 每块题量 / 单块时长（含讲解约 2.5 分钟/题；每天 2 个科目块）。daily 由短练时长动态折算
+  DAY_PLAN: {
+    daily: { perBlock: 6, minutes: 15 },     // 默认 30 分钟档：2 块 ≈ 30 分钟
+    holiday: { perBlock: 12, minutes: 30 },  // 2 块 ≈ 60 分钟
+    rest: { perBlock: 0, minutes: 0 },
+  },
+
+  scheduleOf() {
+    const s = (Store.settings || {}).schedule || {};
+    return {
+      week: { ...this.DEFAULT_SCHEDULE.week, ...(s.week || {}) },
+      ranges: Array.isArray(s.ranges) ? s.ranges : [],
+      shortMinutes: this._shortMinutes(s),
+    };
+  },
+
+  // 短练时长校验：只认 10/20/30，其它值回落默认 30
+  _shortMinutes(s) {
+    const v = Number((s || {}).shortMinutes);
+    return this.SHORT_MINUTES.includes(v) ? v : this.DEFAULT_SHORT_MINUTES;
+  },
+
+  // 今日日型：假期区间覆盖 > 周模板；非法值回落 daily
+  dayTypeOf(now) {
+    const sc = this.scheduleOf();
+    const key = Store.todayKey(now);
+    const hit = sc.ranges.find(r => r && r.from && r.to && key >= r.from && key <= r.to);
+    const t = hit ? hit.type : sc.week[new Date(now).getDay()];
+    return (t === 'holiday' || t === 'rest') ? t : 'daily';
+  },
+
+  // 今日任务量：日常按家长选的短练时长折算（2.5 分钟/题、每天 2 块）；假期固定 60 分钟
+  dayPlanOf(now) {
+    const type = this.dayTypeOf(now);
+    if (type !== 'daily') return this.DAY_PLAN[type];
+    const sm = this._shortMinutes(this.scheduleOf());
+    return { perBlock: Math.round(sm / 5), minutes: Math.round(sm / 2) };
+  },
+
+  // 过密检测（家长保存排班时提醒）：返回警告文案数组，空数组 = 没问题
+  scheduleWarnings(schedule) {
+    const sc = schedule || this.scheduleOf();
+    const out = [];
+    const week = sc.week || {};
+    const days = [1, 2, 3, 4, 5, 6, 0].map(d => week[d] || 'daily');
+    if (!days.includes('rest')) {
+      out.push('一周七天都排了练习，没有一天休息——建议至少留 1 天让孩子彻底放松。');
+    }
+    // 一周总时长按实际短练时长为日常日折算（假期日固定 60 分钟）
+    const sm = this._shortMinutes(sc);
+    const dayMinutes = t => t === 'daily' ? sm : ((this.DAY_PLAN[t] || this.DAY_PLAN.daily).minutes * 2);
+    const minutes = days.reduce((n, t) => n + dayMinutes(t), 0);
+    if (minutes > 300) {
+      out.push(`一周总练习约 ${Math.round(minutes / 6) / 10} 小时，排得太满了——孩子不是做题机器，压到 5 小时以内更有效。`);
+    }
+    let streak = 0, maxStreak = 0;
+    for (const t of days) {
+      if (t === 'holiday') { streak += 1; maxStreak = Math.max(maxStreak, streak); }
+      else streak = 0;
+    }
+    if (maxStreak >= 4) {
+      out.push(`连续 ${maxStreak} 天都是 60 分钟长练——长跑也得喘气，中间隔开更有效。`);
+    }
+    for (const r of (sc.ranges || [])) {
+      if (!r || r.type !== 'holiday' || !r.from || !r.to) continue;
+      const span = Math.round((new Date(r.to) - new Date(r.from)) / 86400000) + 1;
+      if (span > 14) {
+        out.push(`${r.from} ~ ${r.to} 连着 ${span} 天都是长练——假期也张弛有度，中间留几天休息日。`);
+      }
+    }
+    return out;
+  },
+
   examDate() { return Store.settings.examDate || this.DEFAULT_EXAM_DATE; },
 
   termStart() { return Store.settings.termStart || this.DEFAULT_TERM_START; },
@@ -166,12 +249,15 @@ const Scheduler = {
     return { bounty, rusty };
   },
 
-  _block(subjectId, mode, reasons) {
-    return { subjectId, mode, reasons, count: 6 };
+  _block(subjectId, mode, reasons, count) {
+    return { subjectId, mode, reasons, count: count || 6 };
   },
 
-  // 今日计划：2 个科目块。salt 用于「换个组合」换一批。
+  // 今日计划：2 个科目块。salt 用于「换个组合」换一批。休息日返回空计划
   plan(now, salt) {
+    const dayType = this.dayTypeOf(now);
+    if (dayType === 'rest') return [];
+    const perBlock = this.dayPlanOf(now).perBlock;
     const subjects = Store.subjects;
 
     // 考试模式：只出考试科的冲刺块（阶段 3 §13.2，优先级最高）
@@ -182,7 +268,7 @@ const Scheduler = {
         const reasons = pts.length > 0 ? ['冲刺点：' + pts.map(p => p.name).join('、')] : ['考试冲刺，全科扫一遍'];
         const days = this.examDaysLeft(now);
         if (days > 0) reasons.push(`还有 ${days} 天`);
-        return [this._block(subj.id, '考试冲刺', reasons)];
+        return [this._block(subj.id, '考试冲刺', reasons, perBlock)];
       }
     }
 
@@ -190,8 +276,8 @@ const Scheduler = {
     if (Store.attempts.length === 0) {
       const def = subjects.find(s => s.default) || subjects[0];
       const examSub = subjects.find(s => s.exam && s.id !== def.id);
-      const blocks = [this._block(def.id, '突破摸底', ['先摸个底，看看哪里薄'])];
-      if (examSub) blocks.push(this._block(examSub.id, '突破摸底', ['换个科目，先混个脸熟']));
+      const blocks = [this._block(def.id, '突破摸底', ['先摸个底，看看哪里薄'], perBlock)];
+      if (examSub) blocks.push(this._block(examSub.id, '突破摸底', ['换个科目，先混个脸熟'], perBlock));
       return blocks;
     }
 
@@ -217,7 +303,7 @@ const Scheduler = {
       if (x.bounty > 0) reasons.push(`${x.bounty} 道悬赏到期`);
       if (x.rusty > 0) reasons.push(`${x.rusty} 个点快生锈`);
       if (reasons.length === 0) reasons.push('按计划推进');
-      return this._block(x.subject.id, mode, reasons);
+      return this._block(x.subject.id, mode, reasons, perBlock);
     });
   },
 };

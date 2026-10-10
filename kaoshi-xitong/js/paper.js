@@ -154,6 +154,8 @@ const Paper = {
         </div></div>
         <label class="paper-check"><input type="checkbox" id="paper-ans"${st.withAnswer ? ' checked' : ''}> 附参考答案与解析（打印时另起一页）</label>
         <div class="session-actions">
+          <button class="btn glow" id="paper-quiz">⏱ 15 分钟限时小测</button>
+          ${[0, 6].includes(new Date(now).getDay()) ? '<button class="btn secondary" id="paper-mock">📚 整卷模拟（60 分钟）</button>' : ''}
           <button class="btn" id="paper-print">🖨️ 打印这份卷子</button>
           <button class="btn secondary" id="paper-reroll">🔄 换一批</button>
           <button class="btn secondary" id="paper-record">📝 做完了？录错题</button>
@@ -168,6 +170,10 @@ const Paper = {
     el.querySelectorAll('[data-source]').forEach(b => b.addEventListener('click', () => { st.source = b.dataset.source; this.render(el, back); }));
     el.querySelectorAll('[data-count]').forEach(b => b.addEventListener('click', () => { st.count = Number(b.dataset.count); this.render(el, back); }));
     el.querySelector('#paper-ans').addEventListener('change', e => { st.withAnswer = e.target.checked; });
+    const quizBtn = el.querySelector('#paper-quiz');
+    if (quizBtn) quizBtn.addEventListener('click', () => this.renderQuiz(el, back, { minutes: 15, count: 8, title: '⏱ 15 分钟限时小测' }));
+    const mockBtn = el.querySelector('#paper-mock');
+    if (mockBtn) mockBtn.addEventListener('click', () => this.renderQuiz(el, back, { minutes: 60, count: 16, title: '📚 整卷模拟' }));
     el.querySelector('#paper-print').addEventListener('click', () => this.print());
     el.querySelector('#paper-reroll').addEventListener('click', () => this.render(el, back));
     const recBtn = el.querySelector('#paper-record');
@@ -204,5 +210,113 @@ const Paper = {
       this.render(el, back);
     });
     el.querySelector('#paper-rec-cancel').addEventListener('click', () => { this.state._recording = false; this.render(el, back); });
+  },
+
+  // ===== 限时小测（平时 15 分钟）/ 整卷模拟（假期 60 分钟）：屏幕作答，到点自动交卷 =====
+  // 只抽能自动判分的客观题；做错自动进错题本（与线上答错同待遇），未做的标红但不录入
+  renderQuiz(el, back, opts) {
+    const now = Date.now();
+    const items = this.pick({ subjectId: this.state.subjectId, source: this.state.source, count: opts.count }, now)
+      .filter(q => q.type !== 'subjective');
+    if (!items.length) { alert('这一范围内暂时没有可出的客观题，换个范围或题源试试。'); return; }
+    const answers = {};
+    this.quiz = { items, answers, deadline: now + opts.minutes * 60000, timer: null };
+
+    const qHTML = (q, i) => {
+      const body = (q.options && q.options.length)
+        ? `<div class="options">${q.options.map((o, j) =>
+            `<button class="option" data-q="${i}" data-idx="${j}">${this.LETTERS[j]}. ${o}</button>`).join('')}</div>`
+        : `<input class="fill-input" data-q="${i}" placeholder="输入答案" autocomplete="off">`;
+      return `<div class="seg">
+        <div class="quiz-meta">${i + 1}. ［${kpName(q.knowledgePointId)}］（${this.TYPE_NAME[q.type] || q.type}）</div>
+        <div class="stem">${q.stem}</div>
+        ${body}
+      </div>`;
+    };
+
+    el.innerHTML = `
+      <div class="card">
+        <div class="learn-head"><h2>${opts.title}</h2><button class="btn secondary small" id="quiz-quit">← 回工具目录</button></div>
+        <p class="muted">到点自动交卷，没做的题会标红。做完可以提前交卷。</p>
+        <div class="game-timer" id="quiz-timer">${opts.minutes}:00</div>
+        ${items.map(qHTML).join('')}
+        <div class="quiz-actions">
+          <button class="btn big glow" id="quiz-submit">交卷</button>
+        </div>
+      </div>`;
+
+    el.querySelector('#quiz-quit').addEventListener('click', () => {
+      if (!confirm('退出小测？这次作答不保存。')) return;
+      clearInterval(this.quiz.timer);
+      this.quiz = null;
+      back();
+    });
+    el.querySelectorAll('.option').forEach(b => b.addEventListener('click', () => {
+      const i = Number(b.dataset.q), j = Number(b.dataset.idx);
+      const q = items[i];
+      if (q.type === 'multi') {
+        const cur = new Set(answers[i] || []);
+        if (cur.has(j)) cur.delete(j); else cur.add(j);
+        answers[i] = Array.from(cur).sort((x, y) => x - y);
+        b.classList.toggle('selected');
+      } else {
+        answers[i] = j;
+        el.querySelectorAll(`.option[data-q="${i}"]`).forEach(x => x.classList.remove('selected'));
+        b.classList.add('selected');
+      }
+    }));
+    el.querySelectorAll('.fill-input').forEach(inp => inp.addEventListener('input', () => {
+      answers[Number(inp.dataset.q)] = inp.value;
+    }));
+    el.querySelector('#quiz-submit').addEventListener('click', () => {
+      if (!confirm('现在交卷吗？')) return;
+      this.gradeQuiz(el, back, opts, false);
+    });
+    // 倒计时：到点自动交卷
+    this.quiz.timer = setInterval(() => {
+      const left = Math.max(0, this.quiz.deadline - Date.now());
+      const mm = Math.floor(left / 60000), ss = Math.floor((left % 60000) / 1000);
+      const tEl = el.querySelector('#quiz-timer');
+      if (tEl) tEl.textContent = `${mm}:${String(ss).padStart(2, '0')}`;
+      if (left <= 0) this.gradeQuiz(el, back, opts, true);
+    }, 1000);
+  },
+
+  // 交卷结算：得分 + 逐题对错，未做的标红；做错的自动进错题本走销号闭环
+  gradeQuiz(el, back, opts, auto) {
+    const st = this.quiz;
+    if (!st) return;
+    clearInterval(st.timer);
+    this.quiz = null;
+    if (typeof Sound !== 'undefined') Sound.play('done');
+    const { items, answers } = st;
+    let right = 0, blank = 0, wrong = 0;
+    const rows = items.map((q, i) => {
+      const a = answers[i];
+      const unanswered = a === undefined || a === '' || (Array.isArray(a) && a.length === 0);
+      const ok = unanswered ? false : Quiz.grade(q, a);
+      const tag = unanswered ? '<span class="chip chip-bad">未做</span>'
+        : ok === true ? '<span class="chip chip-blue">✔ 对</span>'
+        : '<span class="chip chip-bad">✘ 错</span>';
+      if (ok === true) right += 1;
+      else if (unanswered) blank += 1;
+      else { wrong += 1; Wrongbook.onWrong(q, '（限时小测）', Date.now()); }
+      return `<div class="paper-row">${tag}<span class="muted">${i + 1}. ${kpName(q.knowledgePointId)}</span>
+        ${ok === true ? '' : `<span class="muted">正解：${this._ans(q)}</span>`}</div>`;
+    }).join('');
+
+    el.innerHTML = `
+      <div class="card">
+        <div class="learn-head"><h2>${opts.title} · ${auto ? '⏰ 时间到，自动交卷' : '已交卷'}</h2></div>
+        <div class="game-timer">${right}/${items.length}</div>
+        <p class="muted">${wrong ? `做错的 ${wrong} 道已录入错题本，照常走销号流程。` : ''}${blank ? `${blank} 道没来得及做（已标红）——下次掐着时间练手速。` : ''}${!wrong && !blank ? '全对，稳！' : ''}</p>
+        <div class="paper-list">${rows}</div>
+        <div class="quiz-actions">
+          <button class="btn" id="quiz-again">🔄 再来一次</button>
+          <button class="btn secondary" id="quiz-back">← 回工具目录</button>
+        </div>
+      </div>`;
+    el.querySelector('#quiz-again').addEventListener('click', () => this.renderQuiz(el, back, opts));
+    el.querySelector('#quiz-back').addEventListener('click', back);
   },
 };

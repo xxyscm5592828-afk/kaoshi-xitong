@@ -916,7 +916,11 @@ const App = {
     const how = last ? `距上次备份已经 ${Math.floor((Date.now() - last) / 86400000)} 天` : '还没备份过';
     el.insertAdjacentHTML('afterbegin', `<div class="due-banner">💾 ${how}——学习数据只存在这台浏览器里，去导出一份备份防丢。<button class="btn secondary small" id="go-backup">去备份</button></div>`);
     const btn = el.querySelector('#go-backup');
-    if (btn) btn.addEventListener('click', () => this.show('settings'));
+    if (btn) btn.addEventListener('click', () => {
+      this.show('settings');
+      const card = this.el.querySelector('#backup-card');
+      if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
   },
 
   // 本周排班预览（家长在「设置→练习排班」排的）：一周每天什么类型一目了然，今天高亮
@@ -2787,7 +2791,7 @@ const App = {
           <button class="btn secondary" id="export-audit">📤 导出学情记忆（JSON）</button>
         </div>
       </div>
-      <div class="card">
+      <div class="card" id="backup-card">
         <h2>数据备份</h2>
         <p class="muted">进度全部存在这台设备的浏览器里。换设备、清缓存之前，先导出一份；在新设备上导入即可恢复。建议每周导一次。</p>
         <div class="session-actions">
